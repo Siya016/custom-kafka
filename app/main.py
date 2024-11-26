@@ -17,22 +17,26 @@ def main():
 
     # Step 4: Build the response
     # Message size (4 bytes): Any value (0 for this stage)
+    correlation_id = int.from_bytes(data[8:12], byteorder='big', signed=True)
+    print(f"Extracted correlation_id: {correlation_id}")
+
+    # Step 5: Build the response
+    # Message size (4 bytes): Set to 0 for now (this will be handled in a later stage)
     message_size = (0).to_bytes(4, byteorder="big", signed=True)
 
-    # Correlation ID (4 bytes): Hardcoded to 7
-    correlation_id = (7).to_bytes(4, byteorder="big", signed=True)
+    # Correlation ID (4 bytes): Use the extracted correlation_id from the request
+    correlation_id_bytes = correlation_id.to_bytes(4, byteorder="big", signed=True)
 
     # Combine the message size and correlation ID into the final response
-    response = message_size + correlation_id
+    response = message_size + correlation_id_bytes
 
-    # Step 5: Send the response to the client
+    # Step 6: Send the response to the client
     conn.sendall(response)
-    print(f"Sent response: {response.hex()}")
+    print(f"Sent response: {response.hex()}")  # Print the response in hex for debugging
 
-    # Step 6: Close the connection
+    # Step 7: Close the connection
     conn.close()
     print("Connection closed")
-
    
 
 
