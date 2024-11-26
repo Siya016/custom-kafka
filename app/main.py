@@ -1,23 +1,25 @@
 import socket  # noqa: F401
 
 def parse_request(request_data):
-    # Extract the request_api_version from the request data (2 bytes)
+    # Extract the correlation_id and API version from the request
     request_api_version = int.from_bytes(request_data[4:6], 'big')
     correlation_id = int.from_bytes(request_data[8:12], 'big')
 
-    # Check if the version is within the supported range (0 to 4)
-    if request_api_version > 4:
-        # Unsupported version, return error code 35 (UNSUPPORTED_VERSION)
-        error_code = 35
-    else:
-        # Valid version, no error
-        error_code = 0
+    return correlation_id
 
-    return correlation_id, error_code
+def construct_response(correlation_id):
+    # Response starts with the message size, which will be computed later.
+    # We'll start constructing the response body.
 
-def construct_response(correlation_id, error_code):
-    # Construct the response message
-    # message_size (placeholder), correlation_id (4 bytes), error_code (2 bytes)
+    # Step 1: Set the error_code to 0 (No Error)
+    error_code = 0
+
+    # Step 2: Set the API key and version details for API_VERSIONS (API key 18)
+    api_key = 18  # API_VERSIONS
+    min_version = 0  # Minimum version
+    max_version = 4  # Maximum version, which must be >= 4 for API_VERSIONS
+
+    # Step 3: Construct the response body
     response_data = bytearray()
 
     # Add the correlation_id (4 bytes)
@@ -26,10 +28,18 @@ def construct_response(correlation_id, error_code):
     # Add the error_code (2 bytes)
     response_data.extend(error_code.to_bytes(2, 'big'))
 
-    # Calculate the actual message size
-    message_size = len(response_data) + 4  # message_size itself is 4 bytes
+    # Add the number of API entries (2 bytes, in this case, 1 entry for API_VERSIONS)
+    response_data.extend((1).to_bytes(2, 'big'))
 
-    # Add the message size at the beginning
+    # Add the API entry for API_VERSIONS (API key 18)
+    response_data.extend(api_key.to_bytes(2, 'big'))  # API Key (2 bytes)
+    response_data.extend(min_version.to_bytes(2, 'big'))  # Min Version (2 bytes)
+    response_data.extend(max_version.to_bytes(2, 'big'))  # Max Version (2 bytes)
+
+    # Step 4: Calculate the message_size (4 bytes) to include the length of the entire response
+    message_size = len(response_data) + 4  # +4 for the message_size field itself
+
+    # Add the message_size (4 bytes) at the beginning of the response
     response_data = bytearray(message_size.to_bytes(4, 'big')) + response_data
 
     return response_data
@@ -47,19 +57,18 @@ def main():
     data = conn.recv(1024)
     print(f"Received request: {data.hex()}")  # Print the request data in hex for debugging
 
-    # Step 4: Parse the request and check for unsupported version
-    correlation_id, error_code = parse_request(data)
+    # Parse the request to extract correlation_id
+    correlation_id = parse_request(data)
     print(f"Extracted correlation_id: {correlation_id}")
-    print(f"Error code: {error_code}")
 
-    # Step 5: Construct the response based on the parsed data
-    response_data = construct_response(correlation_id, error_code)
+    # Construct the response based on the parsed data
+    response_data = construct_response(correlation_id)
 
-    # Step 6: Send the response to the client
+    # Send the response to the client
     conn.sendall(response_data)
     print(f"Sent response: {response_data.hex()}")  # Print the response in hex for debugging
 
-    # Step 7: Close the connection
+    # Close the connection
     conn.close()
     print("Connection closed")
 
