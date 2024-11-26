@@ -1,5 +1,4 @@
 import socket  # noqa: F401
-
 def parse_request(request_data):
     """
     Parse the incoming request data to extract the correlation_id and determine the error_code
@@ -83,9 +82,13 @@ def main():
     # Handle the request and generate the response
     response_data = handle_request(data)
 
+    # Log the final response size and content
+    print(f"Response size: {len(response_data)} bytes")
+    print(f"Sent response (hex): {response_data.hex()}")  # Print the response in hex for debugging
+
     # Send the response back to the client
     conn.sendall(response_data)
-    print(f"Sent response (hex): {response_data.hex()}")  # Print the response in hex for debugging
+    print("Response sent, closing connection.")
 
     # Close the connection
     conn.close()
