@@ -1,4 +1,4 @@
-import socket  # noqa: F401
+import socket
 from enum import Enum, unique
 
 # Define the error codes for the Kafka protocol
@@ -121,5 +121,8 @@ def main():
     # Close the connection
     client.close()
     print("Connection closed")
+
+
+# Entry point to run the server
 if __name__ == "__main__":
     main()
