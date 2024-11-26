@@ -1,7 +1,5 @@
 import socket  # noqa: F401
 
-
-
 def parse_request(request_data):
     """
     Parse the incoming request data to extract the correlation_id and determine the error_code
