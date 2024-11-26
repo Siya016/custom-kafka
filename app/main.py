@@ -44,7 +44,10 @@ def make_response(api_key, api_version, correlation_id):
     valid_api_versions = [0, 1, 2, 3, 4]
     
     # Determine the error code based on the request's API version
-    error_code = ErrorCode.NONE if api_version in valid_api_versions else ErrorCode.UNSUPPORTED_VERSION
+    if api_version not in valid_api_versions:
+        error_code = ErrorCode.UNSUPPORTED_VERSION
+    else:
+        error_code = ErrorCode.NONE
 
     # Response header: correlation_id (4 bytes)
     response_header = correlation_id.to_bytes(4, 'big')
