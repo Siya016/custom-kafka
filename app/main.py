@@ -1,6 +1,6 @@
 import socket  # noqa: F401
 
-import socket
+
 
 def parse_request(request_data):
     """
