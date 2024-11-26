@@ -1,23 +1,20 @@
 import socket  # noqa: F401
 
 def parse_request(request_data):
-    # Extract the correlation_id and API version from the request
-    request_api_version = int.from_bytes(request_data[4:6], 'big')
+    # Extract the correlation_id from the request header (4 bytes)
     correlation_id = int.from_bytes(request_data[8:12], 'big')
-
     return correlation_id
 
 def construct_response(correlation_id):
-    # Response starts with the message size, which will be computed later.
-    # We'll start constructing the response body.
-
+    # Response starts with the message size (which will be calculated)
+    
     # Step 1: Set the error_code to 0 (No Error)
     error_code = 0
 
     # Step 2: Set the API key and version details for API_VERSIONS (API key 18)
     api_key = 18  # API_VERSIONS
     min_version = 0  # Minimum version
-    max_version = 4  # Maximum version, which must be >= 4 for API_VERSIONS
+    max_version = 4  # Maximum version, must be >= 4
 
     # Step 3: Construct the response body
     response_data = bytearray()
@@ -40,9 +37,9 @@ def construct_response(correlation_id):
     message_size = len(response_data) + 4  # +4 for the message_size field itself
 
     # Add the message_size (4 bytes) at the beginning of the response
-    response_data = bytearray(message_size.to_bytes(4, 'big')) + response_data
+    final_response = bytearray(message_size.to_bytes(4, 'big')) + response_data
 
-    return response_data
+    return final_response
 
 def main():
     # Set up the server to listen on localhost and port 9092
