@@ -90,6 +90,5 @@ def main():
     # Close the connection
     conn.close()
     print("Connection closed")
-
 if __name__ == "__main__":
     main()
