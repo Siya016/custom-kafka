@@ -37,7 +37,7 @@ def main():
     # Step 7: Close the connection
     conn.close()
     print("Connection closed")
-   
+   #new
 
 
 if __name__ == "__main__":
