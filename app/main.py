@@ -91,7 +91,8 @@ class Message:
 
     def to_bytes(self):
         # Include 4-byte message length prefix
-        return self.size.to_bytes(4, byteorder="big") + self.header + self.body
+        full_message = self.header + self.body
+        return len(full_message).to_bytes(4, byteorder="big") + full_message
 
     def __repr__(self):
         return (
@@ -121,9 +122,13 @@ def receive_full_message(sock: socket.socket) -> bytes:
 def handle_api_versions_request(request: Message) -> Message:
     """
     Handle APIVersions request and generate appropriate response
+    Specifically designed for version 4 requests
     """
     # Construct the response header (correlation ID from request)
-    response_header = request.correlation_id.to_bytes(4, byteorder="big")
+    response_header = (
+        request.correlation_id.to_bytes(4, byteorder="big") +  # Correlation ID (4 bytes)
+        int(0).to_bytes(2, byteorder="big")  # Throttle time (2 bytes)
+    )
 
     # APIVersions response body
     response_body = (
@@ -133,9 +138,7 @@ def handle_api_versions_request(request: Message) -> Message:
         # API key entry for API_VERSIONS (key 18)
         int(18).to_bytes(2, byteorder="big") +   # api_key: 2 bytes
         int(0).to_bytes(2, byteorder="big") +    # min_version: 2 bytes
-        int(4).to_bytes(2, byteorder="big") +    # max_version: 2 bytes
-        
-        int(0).to_bytes(4, byteorder="big")      # throttle_time_ms: 4 bytes
+        int(4).to_bytes(2, byteorder="big")      # max_version: 2 bytes (at least 4 as required)
     )
 
     # Construct and return the full response message
@@ -163,8 +166,15 @@ def main():
                 break
             
             # Skip first 4 bytes (message length), parse request
-            request = Message(received_data[4:], b'')
+            request_length = int.from_bytes(received_data[:4], byteorder="big")
+            request = Message(received_data[4:14], received_data[14:request_length+4])
             print(f"Received request: {request}")
+
+            # Verify request is APIVersions v4
+            if (request.request_api_key != 18 or  # API_VERSIONS key
+                request.request_api_version != 4):  # Version 4
+                print(f"Unexpected request: key {request.request_api_key}, version {request.request_api_version}")
+                break
 
             # Handle APIVersions request
             response = handle_api_versions_request(request)
