@@ -46,20 +46,35 @@ def main():
     response_header = request.correlation_id.to_bytes(4, byteorder="big")
 
     # ApiVersions response body (including error_code, api_keys, throttle_time_ms)
+    # response_body = (
+    #     error_code.to_bytes(2, byteorder="big") +  # error_code: 2 bytes
+    #     int(1 + 1).to_bytes(1, byteorder="big") +  # num_api_keys: 1 byte (1 key + 1 entry for API key 18)
+    #     int(18).to_bytes(2, byteorder="big") +  # api_key: 18 (2 bytes)
+    #     int(4).to_bytes(2, byteorder="big") +  # min_version: 4 (2 bytes)
+    #     int(4).to_bytes(2, byteorder="big") +  # max_version: 4 (2 bytes)
+    #     int(0).to_bytes(2, byteorder="big") +  # TAG_BUFFER: 0 (2 bytes)
+    #     int(0).to_bytes(4, byteorder="big")  # throttle_time_ms: 0 (4 bytes)
+    # )
+
     response_body = (
         error_code.to_bytes(2, byteorder="big") +  # error_code: 2 bytes
-        int(1 + 1).to_bytes(1, byteorder="big") +  # num_api_keys: 1 byte (1 key + 1 entry for API key 18)
+        int(1).to_bytes(1, byteorder="big") +  # num_api_keys: 1 byte (1 key)
         int(18).to_bytes(2, byteorder="big") +  # api_key: 18 (2 bytes)
         int(4).to_bytes(2, byteorder="big") +  # min_version: 4 (2 bytes)
         int(4).to_bytes(2, byteorder="big") +  # max_version: 4 (2 bytes)
-        int(0).to_bytes(2, byteorder="big") +  # TAG_BUFFER: 0 (2 bytes)
+        int(0).to_bytes(2, byteorder="big") +  # TAG_BUFFER: 0 (2 bytes, may not be necessary)
         int(0).to_bytes(4, byteorder="big")  # throttle_time_ms: 0 (4 bytes)
     )
+
+# Ensure the size of the message includes both header and body
+    response_size = len(response_header + response_body)
 
     # Construct the full response message
     while True:
         message = Message(response_header, response_body)
         print(f"Sending message: {message.to_bytes().hex()}")
+        print(f"Sending message with size: {response_size} bytes")
+        print(f"Full response message: {message.to_bytes().hex()}")
 
         # Send the response back to the client
         socket.sendall(message.to_bytes())
