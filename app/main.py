@@ -115,14 +115,14 @@ def handle_client(socket):
             # Construct the response message
             response_header = request.correlation_id.to_bytes(4, byteorder="big")
             response_body = (
-                error_code.to_bytes(2, byteorder="big")  # error_code
-                + int(1).to_bytes(1, byteorder="big")  # num_api_keys
-                + int(18).to_bytes(2, byteorder="big")  # api_key (18: API_VERSIONS)
-                + int(4).to_bytes(2, byteorder="big")  # min_version
-                + int(4).to_bytes(2, byteorder="big")  # max_version
-                + int(0).to_bytes(4, byteorder="big")  # throttle_time_ms
-                + b""  # no tagged fields
-            )
+                error_code.to_bytes(2, byteorder="big") +  # error_code: 2 bytes
+                int(1).to_bytes(1, byteorder="big") +  # num_api_keys: 1 byte (1 entry for API key 18)
+                int(18).to_bytes(2, byteorder="big") +  # api_key: 18 (2 bytes)
+                int(4).to_bytes(2, byteorder="big") +  # min_version: 4 (2 bytes)
+                int(4).to_bytes(2, byteorder="big") +  # max_version: 4 (2 bytes)
+                int(0).to_bytes(2, byteorder="big") +  # TAG_BUFFER: 0 (2 bytes)
+                int(0).to_bytes(4, byteorder="big")  # throttle_time_ms: 0 (4 bytes)
+             )
             message = Message(response_header, response_body)
             print(f"Sending message: {message.to_bytes().hex()}")
 
