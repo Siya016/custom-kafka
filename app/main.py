@@ -70,79 +70,109 @@
 # if __name__ == "__main__":
 #     main()
 
-from socket import create_server
+import socket
+from enum import Enum, unique
 
-class Message:
-    def __init__(self, data: bytes):
-        self.size = int.from_bytes(data[:4], byteorder="big")
-        self.header = data[4:12]
-        self.request_api_key = int.from_bytes(data[4:6], byteorder="big")
-        self.request_api_version = int.from_bytes(data[6:8], byteorder="big")
-        self.correlation_id = int.from_bytes(data[8:12], byteorder="big")
-        self.body = data[12:]
+@unique
+class ErrorCode(Enum):
+    NONE = 0
+    UNSUPPORTED_VERSION = 35
 
-    def __repr__(self):
-        return (
-            f"Size: {self.size} | ApiKey: {self.request_api_key} | "
-            f"Version: {self.request_api_version} | CorrelationId: {self.correlation_id} | Body: {self.body}"
-        )
+def parse_request(data):
+    """
+    Parses the received request data into a Kafka-like structure.
+    Args:
+        data (bytes): The raw data received from the client.
+    Returns:
+        dict: Parsed request data with keys 'api_key', 'api_version', and 'correlation_id'.
+    """
+    if len(data) < 12:
+        raise ValueError("Incomplete Kafka request received.")
+    return {
+        "api_key": int.from_bytes(data[4:6], byteorder="big"),
+        "api_version": int.from_bytes(data[6:8], byteorder="big"),
+        "correlation_id": int.from_bytes(data[8:12], byteorder="big"),
+    }
 
+def construct_response(request):
+    """
+    Constructs a Kafka-style response based on the given request.
+    Args:
+        request (dict): Parsed request data.
+    Returns:
+        bytes: The constructed response message.
+    """
+    # Header
+    correlation_id = request["correlation_id"]
+    response_header = correlation_id.to_bytes(4, byteorder="big")
 
-def process_request(data: bytes) -> bytes:
-    # Parse the request
-    request = Message(data)
-    print(f"Received request: {request}")
-
-    # Ensure the API version is supported
-    error_code = 0  # No error
-
-    # Construct the response
-    response_header = request.correlation_id.to_bytes(4, byteorder="big")
-    num_api_keys = 1
-
-    # Construct the body
-    response_body = (
-        error_code.to_bytes(2, byteorder="big") +  # Error code: 2 bytes
-        num_api_keys.to_bytes(4, byteorder="big") +  # Num API keys: 4 bytes
-        int(18).to_bytes(2, byteorder="big") +  # API key: 18
-        int(4).to_bytes(2, byteorder="big") +  # Min version: 4
-        int(4).to_bytes(2, byteorder="big") +  # Max version: 4
-        int(0).to_bytes(4, byteorder="big") +  # Throttle time (ms): 4 bytes
-        b"\x00"  # Tagged fields (empty): 1 byte
+    # Validate API version
+    valid_api_versions = [0, 1, 2, 3, 4]
+    error_code = (
+        ErrorCode.NONE.value
+        if request["api_version"] in valid_api_versions
+        else ErrorCode.UNSUPPORTED_VERSION.value
     )
 
-    # Create the full response
-    message_length = (len(response_header) + len(response_body)).to_bytes(4, byteorder="big")
-    full_response = message_length + response_header + response_body
+    # Body
+    api_key = request["api_key"]
+    min_version, max_version = 0, 4
+    throttle_time_ms = 0
+    tag_buffer = b"\x00"
+    response_body = (
+        error_code.to_bytes(2, byteorder="big")  # error_code: 2 bytes
+        + int(1).to_bytes(1, byteorder="big")  # num_api_keys: 1 byte
+        + api_key.to_bytes(2, byteorder="big")  # api_key: 2 bytes
+        + min_version.to_bytes(2, byteorder="big")  # min_version: 2 bytes
+        + max_version.to_bytes(2, byteorder="big")  # max_version: 2 bytes
+        + throttle_time_ms.to_bytes(4, byteorder="big")  # throttle_time_ms: 4 bytes
+        + tag_buffer  # TAG_BUFFER: 1 byte
+    )
 
-    print(f"Sending response: {full_response.hex()}")
-    return full_response
+    # Combine header and body
+    response = response_header + response_body
+    response_size = len(response).to_bytes(4, byteorder="big")
+    return response_size + response
 
+def handle_client(client_socket):
+    """
+    Handles communication with a connected client.
+    Args:
+        client_socket (socket.socket): The client's socket connection.
+    """
+    try:
+        while True:
+            # Receive data from client
+            data = client_socket.recv(2048)
+            if not data:
+                print("Client disconnected.")
+                break
 
-def main():
-    server = create_server(("localhost", 9092), reuse_port=True)
-    print("Server is listening on port 9092...")
+            # Parse the request
+            request = parse_request(data)
+            print(f"Received request: {request}")
 
-    while True:
-        conn, address = server.accept()
-        print(f"Client connected: {address}")
+            # Construct and send response
+            response = construct_response(request)
+            print(f"Sending response: {response.hex()}")
+            client_socket.sendall(response)
 
-        try:
-            while True:
-                # Read the request
-                data = conn.recv(1024)
-                if not data:
-                    print("Client disconnected.")
-                    break
+    except (ConnectionResetError, ValueError) as e:
+        print(f"Connection error: {e}")
+    finally:
+        client_socket.close()
+        print("Client connection closed.")
 
-                # Process the request and send the response
-                response = process_request(data)
-                conn.sendall(response)
-        except Exception as e:
-            print(f"Error: {e}")
-        finally:
-            conn.close()
-
+def start_server():
+    """
+    Starts the Kafka-like server to listen for client connections.
+    """
+    with socket.create_server(("localhost", 9092), reuse_port=True) as server:
+        print("Server is listening on port 9092...")
+        while True:
+            client_socket, address = server.accept()
+            print(f"Client connected from {address}")
+            handle_client(client_socket)
 
 if __name__ == "__main__":
-    main()
+    start_server()
