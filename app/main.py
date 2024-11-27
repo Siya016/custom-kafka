@@ -84,7 +84,8 @@ class Message:
         self.request_api_key = int.from_bytes(header[:2], byteorder="big")
         self.request_api_version = int.from_bytes(header[2:4], byteorder="big")
         self.correlation_id = int.from_bytes(header[4:8], byteorder="big")
-        self.client_id = int.from_bytes(header[8:], byteorder="big")
+        self.client_id_length = int.from_bytes(header[8:10], byteorder="big")
+        self.client_id = header[10:10+self.client_id_length].decode('utf-8')
         self.tagged_fields = ""  # No tagged fields for us
         self.body = body
 
@@ -126,10 +127,15 @@ def handle_api_versions_request(request: Message) -> Message:
 
     # APIVersions response body
     response_body = (
-        int(0).to_bytes(2, byteorder="big") +  # error_code: 2 bytes (0 = No Error)
-        int(0).to_bytes(1, byteorder="big") +  # num_api_keys: 1 byte (0)
-        b'\x00\x12\x00\x00\x00\x04' +           # Specific API key 18 entry
-        int(0).to_bytes(2, byteorder="big")     # TAG_BUFFER: 2 bytes
+        int(0).to_bytes(2, byteorder="big") +    # error_code: 2 bytes (0 = No Error)
+        int(1).to_bytes(4, byteorder="big") +    # num_api_keys: 4 bytes (1 API key)
+        
+        # API key entry for API_VERSIONS (key 18)
+        int(18).to_bytes(2, byteorder="big") +   # api_key: 2 bytes
+        int(0).to_bytes(2, byteorder="big") +    # min_version: 2 bytes
+        int(4).to_bytes(2, byteorder="big") +    # max_version: 2 bytes
+        
+        int(0).to_bytes(4, byteorder="big")      # throttle_time_ms: 4 bytes
     )
 
     # Construct and return the full response message
@@ -157,7 +163,7 @@ def main():
                 break
             
             # Skip first 4 bytes (message length), parse request
-            request = Message(received_data[4:12], received_data[12:])
+            request = Message(received_data[4:], b'')
             print(f"Received request: {request}")
 
             # Handle APIVersions request
