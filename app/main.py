@@ -73,9 +73,6 @@
 from socket import create_server
 
 class Message:
-    header: bytes
-    body: bytes
-
     def __init__(self, header: bytes, body: bytes):
         self.size = len(header + body)
         self.header = header
@@ -83,6 +80,7 @@ class Message:
         self.request_api_version = int.from_bytes(header[2:4], byteorder="big")
         self.correlation_id = int.from_bytes(header[4:8], byteorder="big")
         self.client_id = int.from_bytes(header[8:], byteorder="big")
+        self.tagged_fields = b""  # No tagged fields for us
         self.body = body
 
     def to_bytes(self):
@@ -95,6 +93,7 @@ class Message:
             f"{self.body}"
         )
 
+
 def process_request(data: bytes) -> bytes:
     # Parse the received request (skip the first 4 bytes and initialize the Message object)
     request = Message(data[4:], b"")
@@ -106,15 +105,17 @@ def process_request(data: bytes) -> bytes:
     # Construct the response message
     response_header = request.correlation_id.to_bytes(4, byteorder="big")
 
-    # ApiVersions response body (including error_code, api_keys, throttle_time_ms)
+    # `num_api_keys` should match the number of API keys in the response
+    num_api_keys = 1  # Including 1 entry for API key 18
+
+    # ApiVersions response body
     response_body = (
         error_code.to_bytes(2, byteorder="big") +  # error_code: 2 bytes
-        int(1).to_bytes(1, byteorder="big") +      # num_api_keys: 1 byte (1 API key entry)
-        int(18).to_bytes(2, byteorder="big") +     # api_key: 18 (2 bytes)
-        int(4).to_bytes(2, byteorder="big") +      # min_version: 4 (2 bytes)
-        int(4).to_bytes(2, byteorder="big") +      # max_version: 4 (2 bytes)
-        int(0).to_bytes(2, byteorder="big") +      # TAG_BUFFER: 0 (2 bytes)
-        int(0).to_bytes(4, byteorder="big")        # throttle_time_ms: 0 (4 bytes)
+        num_api_keys.to_bytes(4, byteorder="big") +  # num_api_keys: 4 bytes
+        int(18).to_bytes(2, byteorder="big") +  # api_key: 18 (2 bytes)
+        int(4).to_bytes(2, byteorder="big") +  # min_version: 4 (2 bytes)
+        int(4).to_bytes(2, byteorder="big") +  # max_version: 4 (2 bytes)
+        int(0).to_bytes(4, byteorder="big")    # throttle_time_ms: 0 (4 bytes)
     )
 
     # Construct the full response message
@@ -122,10 +123,11 @@ def process_request(data: bytes) -> bytes:
     print(f"Sending message: {message.to_bytes().hex()}")
     return message.to_bytes()
 
+
 def main():
     server = create_server(("localhost", 9092), reuse_port=True)
     print("Server is listening on port 9092...")
-    
+
     while True:
         socket, address = server.accept()
         print(f"Client connected: {address}")
@@ -137,20 +139,14 @@ def main():
                     print("Client disconnected.")
                     break
 
-                # Ensure the first 4 bytes are the message length
-                message_length = int.from_bytes(data[:4], byteorder="big")
-                if len(data) < message_length + 4:
-                    print("Incomplete message received, waiting for more data.")
-                    continue
-
-                # Process the request and send the response
-                response = process_request(data[:message_length + 4])
+                # Process the received request and send a response
+                response = process_request(data)
                 socket.sendall(response)
-
         except Exception as e:
-            print(f"Error handling client: {e}")
+            print(f"Error occurred: {e}")
         finally:
             socket.close()
+
 
 if __name__ == "__main__":
     main()
