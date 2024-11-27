@@ -127,11 +127,9 @@ def handle_api_versions_request(request: Message) -> Message:
     # APIVersions response body
     response_body = (
         int(0).to_bytes(2, byteorder="big") +  # error_code: 2 bytes (0 = No Error)
-        int(1).to_bytes(1, byteorder="big") +  # num_api_keys: 1 byte 
-        int(18).to_bytes(2, byteorder="big") +  # api_key: 18 (API_VERSIONS)
-        int(0).to_bytes(2, byteorder="big") +  # min_version: 0
-        int(4).to_bytes(2, byteorder="big") +  # max_version: 4 (at least 4)
-        int(0).to_bytes(2, byteorder="big")    # TAG_BUFFER: 2 bytes
+        int(0).to_bytes(1, byteorder="big") +  # num_api_keys: 1 byte (0)
+        b'\x00\x12\x00\x00\x00\x04' +           # Specific API key 18 entry
+        int(0).to_bytes(2, byteorder="big")     # TAG_BUFFER: 2 bytes
     )
 
     # Construct and return the full response message
