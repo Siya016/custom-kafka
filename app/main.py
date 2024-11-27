@@ -94,7 +94,7 @@ def process_request(data: bytes) -> bytes:
     print(f"Received request: {request}")
 
     # Ensure the API version is supported
-    error_code = 0 if request.request_api_version == 4 else 35
+    error_code = 0  # No error
 
     # Construct the response
     response_header = request.correlation_id.to_bytes(4, byteorder="big")
