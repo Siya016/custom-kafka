@@ -75,18 +75,13 @@ from typing import Tuple
 
 class Message:
     def __init__(self, header: bytes, body: bytes):
-        # Calculate total size including the 4-byte length prefix
-        total_data = header + body
-        self.size = len(total_data)
-        
         # Parse header fields
         self.header = header
         self.request_api_key = int.from_bytes(header[:2], byteorder="big")
         self.request_api_version = int.from_bytes(header[2:4], byteorder="big")
         self.correlation_id = int.from_bytes(header[4:8], byteorder="big")
         self.client_id_length = int.from_bytes(header[8:10], byteorder="big")
-        self.client_id = header[10:10+self.client_id_length].decode('utf-8')
-        self.tagged_fields = ""  # No tagged fields for us
+        self.client_id = header[10:10+self.client_id_length].decode('utf-8') if self.client_id_length > 0 else ""
         self.body = body
 
     def to_bytes(self):
@@ -96,7 +91,7 @@ class Message:
 
     def __repr__(self):
         return (
-            f"{self.size} | "
+            f"{len(self.header) + len(self.body)} | "
             f"{self.request_api_key} - {self.request_api_version} - {self.correlation_id} - {self.client_id} | "
             f"{self.body}"
         )
@@ -124,10 +119,10 @@ def handle_api_versions_request(request: Message) -> Message:
     Handle APIVersions request and generate appropriate response
     Specifically designed for version 4 requests
     """
-    # Construct the response header (correlation ID from request)
+    # Construct the response header
     response_header = (
         request.correlation_id.to_bytes(4, byteorder="big") +  # Correlation ID (4 bytes)
-        int(0).to_bytes(2, byteorder="big")  # Throttle time (2 bytes)
+        int(0).to_bytes(4, byteorder="big")  # Throttle time ms (4 bytes)
     )
 
     # APIVersions response body
@@ -138,7 +133,10 @@ def handle_api_versions_request(request: Message) -> Message:
         # API key entry for API_VERSIONS (key 18)
         int(18).to_bytes(2, byteorder="big") +   # api_key: 2 bytes
         int(0).to_bytes(2, byteorder="big") +    # min_version: 2 bytes
-        int(4).to_bytes(2, byteorder="big")      # max_version: 2 bytes (at least 4 as required)
+        int(4).to_bytes(2, byteorder="big") +    # max_version: 2 bytes (at least 4 as required)
+        
+        # TAG_BUFFER: empty tagged fields
+        int(0).to_bytes(4, byteorder="big")      # length of tagged fields (0)
     )
 
     # Construct and return the full response message
@@ -165,7 +163,7 @@ def main():
             if not received_data:
                 break
             
-            # Skip first 4 bytes (message length), parse request
+            # Parse request
             request_length = int.from_bytes(received_data[:4], byteorder="big")
             request = Message(received_data[4:14], received_data[14:request_length+4])
             print(f"Received request: {request}")
