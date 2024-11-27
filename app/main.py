@@ -70,7 +70,6 @@
 # if __name__ == "__main__":
 #     main()
 
-
 import socket
 from typing import Tuple
 
@@ -125,14 +124,13 @@ def handle_api_versions_request(request: Message) -> Message:
     # Construct the response header (correlation ID from request)
     response_header = request.correlation_id.to_bytes(4, byteorder="big")
 
-    # ApiVersions response body 
+    # APIVersions response body
     response_body = (
         int(0).to_bytes(2, byteorder="big") +  # error_code: 2 bytes (0 = No Error)
         int(1).to_bytes(1, byteorder="big") +  # num_api_keys: 1 byte 
-        int(18).to_bytes(2, byteorder="big") +  # api_key: 18 (2 bytes)
-        int(4).to_bytes(2, byteorder="big") +  # min_version: 4 (2 bytes)
-        int(4).to_bytes(2, byteorder="big") +  # max_version: 4 (2 bytes)
-        int(0).to_bytes(4, byteorder="big") +  # throttle_time_ms: 4 bytes
+        int(18).to_bytes(2, byteorder="big") +  # api_key: 18 (API_VERSIONS)
+        int(0).to_bytes(2, byteorder="big") +  # min_version: 0
+        int(4).to_bytes(2, byteorder="big") +  # max_version: 4 (at least 4)
         int(0).to_bytes(2, byteorder="big")    # TAG_BUFFER: 2 bytes
     )
 
@@ -140,12 +138,15 @@ def handle_api_versions_request(request: Message) -> Message:
     return Message(response_header, response_body)
 
 def main():
-    # Create server socket
-    server = socket.create_server(("localhost", 9092), reuse_port=True)
+    # Bind to the server socket
+    server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT, 1)
+    server_socket.bind(("localhost", 9092))
+    server_socket.listen(1)
     print("Server listening on localhost:9092")
     
     # Accept client connection
-    client_socket, address = server.accept()
+    client_socket, address = server_socket.accept()
     print(f"Client connected: {address}")
 
     try:
@@ -171,8 +172,9 @@ def main():
     except Exception as e:
         print(f"Error occurred: {e}")
     finally:
-        # Close the connection
+        # Close the connections
         client_socket.close()
+        server_socket.close()
         print("Connection closed.")
 
 if __name__ == "__main__":
