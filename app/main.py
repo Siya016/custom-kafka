@@ -122,21 +122,18 @@ def handle_api_versions_request(request: Message) -> Message:
     """
     Handle APIVersions request and generate appropriate response
     """
-    # Check if the API version is supported (error code 0 for valid versions, 35 for unsupported)
-    error_code = 0 if request.request_api_version in [0, 1, 2, 3, 4] else 35
-
     # Construct the response header (correlation ID from request)
     response_header = request.correlation_id.to_bytes(4, byteorder="big")
 
     # ApiVersions response body 
     response_body = (
-        error_code.to_bytes(2, byteorder="big") +  # error_code: 2 bytes
-        int(1).to_bytes(1, byteorder="big") +  # num_api_keys: 1 byte (1 key)
+        int(0).to_bytes(2, byteorder="big") +  # error_code: 2 bytes (0 = No Error)
+        int(1).to_bytes(1, byteorder="big") +  # num_api_keys: 1 byte 
         int(18).to_bytes(2, byteorder="big") +  # api_key: 18 (2 bytes)
         int(4).to_bytes(2, byteorder="big") +  # min_version: 4 (2 bytes)
         int(4).to_bytes(2, byteorder="big") +  # max_version: 4 (2 bytes)
-        int(0).to_bytes(2, byteorder="big") +  # TAG_BUFFER: 0 (2 bytes)
-        int(0).to_bytes(4, byteorder="big")  # throttle_time_ms: 0 (4 bytes)
+        int(0).to_bytes(4, byteorder="big") +  # throttle_time_ms: 4 bytes
+        int(0).to_bytes(2, byteorder="big")    # TAG_BUFFER: 2 bytes
     )
 
     # Construct and return the full response message
