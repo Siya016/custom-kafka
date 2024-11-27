@@ -71,20 +71,26 @@
 #     main()
 
 
-from socket import create_server
-
+import socket
+from typing import Tuple
 
 class Message:
     def __init__(self, header: bytes, body: bytes):
-        self.size = len(header + body)
+        # Calculate total size including the 4-byte length prefix
+        total_data = header + body
+        self.size = len(total_data)
+        
+        # Parse header fields
         self.header = header
         self.request_api_key = int.from_bytes(header[:2], byteorder="big")
         self.request_api_version = int.from_bytes(header[2:4], byteorder="big")
         self.correlation_id = int.from_bytes(header[4:8], byteorder="big")
         self.client_id = int.from_bytes(header[8:], byteorder="big")
+        self.tagged_fields = ""  # No tagged fields for us
         self.body = body
 
     def to_bytes(self):
+        # Include 4-byte message length prefix
         return self.size.to_bytes(4, byteorder="big") + self.header + self.body
 
     def __repr__(self):
@@ -94,62 +100,83 @@ class Message:
             f"{self.body}"
         )
 
+def receive_full_message(sock: socket.socket) -> bytes:
+    """
+    Receive a complete Kafka-style message, which includes a 4-byte length prefix
+    """
+    # Read the 4-byte message length
+    length_bytes = sock.recv(4)
+    if not length_bytes:
+        return b''
+    
+    # Convert length bytes to integer
+    message_length = int.from_bytes(length_bytes, byteorder="big")
+    
+    # Read the rest of the message
+    message_data = sock.recv(message_length)
+    
+    # Combine length bytes and message data
+    return length_bytes + message_data
 
-def handle_client(socket):
-    print("Waiting for requests...")
-    while True:
-        try:
-            # Receive the request from the client
-            data = socket.recv(1024)
-            if not data:
-                print("Client disconnected.")
-                break
+def handle_api_versions_request(request: Message) -> Message:
+    """
+    Handle APIVersions request and generate appropriate response
+    """
+    # Check if the API version is supported (error code 0 for valid versions, 35 for unsupported)
+    error_code = 0 if request.request_api_version in [0, 1, 2, 3, 4] else 35
 
-            # Parse the received request
-            request = Message(data[4:], b"")
-            print(f"Received request: {request}")
+    # Construct the response header (correlation ID from request)
+    response_header = request.correlation_id.to_bytes(4, byteorder="big")
 
-            # Check if the API version is supported
-            error_code = 0 if request.request_api_version in [0, 1, 2, 3, 4] else 35
+    # ApiVersions response body 
+    response_body = (
+        error_code.to_bytes(2, byteorder="big") +  # error_code: 2 bytes
+        int(1).to_bytes(1, byteorder="big") +  # num_api_keys: 1 byte (1 key)
+        int(18).to_bytes(2, byteorder="big") +  # api_key: 18 (2 bytes)
+        int(4).to_bytes(2, byteorder="big") +  # min_version: 4 (2 bytes)
+        int(4).to_bytes(2, byteorder="big") +  # max_version: 4 (2 bytes)
+        int(0).to_bytes(2, byteorder="big") +  # TAG_BUFFER: 0 (2 bytes)
+        int(0).to_bytes(4, byteorder="big")  # throttle_time_ms: 0 (4 bytes)
+    )
 
-            # Construct the response message
-            response_header = request.correlation_id.to_bytes(4, byteorder="big")
-            response_body = (
-             int(0).to_bytes(2, byteorder="big") +  # error_code: 2 bytes
-             int(1).to_bytes(1, byteorder="big") +  # num_api_keys: 1 byte (1 entry for API key 18)
-             int(18).to_bytes(2, byteorder="big") +  # api_key: 18 (2 bytes)
-             int(4).to_bytes(2, byteorder="big") +  # min_version: 4 (2 bytes)
-             int(4).to_bytes(2, byteorder="big") +  # max_version: 4 (2 bytes)
-             
-             int(0).to_bytes(4, byteorder="big")  # throttle_time_ms: 0 (4 bytes)
-             )
-            message = Message(response_header, response_body)
-            print(f"Sending message: {message.to_bytes().hex()}")
-
-            # Send the response back to the client
-            socket.sendall(message.to_bytes())
-
-        except ConnectionResetError:
-            print("Connection reset by client.")
-            break
-        except Exception as e:
-            print(f"Error: {e}")
-            break
-
-    # Close the socket
-    socket.close()
-    print("Connection closed.")
-
+    # Construct and return the full response message
+    return Message(response_header, response_body)
 
 def main():
-    server = create_server(("localhost", 9092), reuse_port=True)
-    print("Server started and listening on port 9092...")
+    # Create server socket
+    server = socket.create_server(("localhost", 9092), reuse_port=True)
+    print("Server listening on localhost:9092")
+    
+    # Accept client connection
+    client_socket, address = server.accept()
+    print(f"Client connected: {address}")
 
-    while True:
-        client_socket, address = server.accept()
-        print(f"Client connected: {address}")
-        handle_client(client_socket)
+    try:
+        while True:
+            # Receive full message
+            received_data = receive_full_message(client_socket)
+            
+            # Check if connection is closed
+            if not received_data:
+                break
+            
+            # Skip first 4 bytes (message length), parse request
+            request = Message(received_data[4:12], received_data[12:])
+            print(f"Received request: {request}")
 
+            # Handle APIVersions request
+            response = handle_api_versions_request(request)
+            
+            # Send response
+            client_socket.sendall(response.to_bytes())
+            print(f"Sent response: {response.to_bytes().hex()}")
+
+    except Exception as e:
+        print(f"Error occurred: {e}")
+    finally:
+        # Close the connection
+        client_socket.close()
+        print("Connection closed.")
 
 if __name__ == "__main__":
     main()
