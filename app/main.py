@@ -80,7 +80,6 @@ class Message:
         self.request_api_version = int.from_bytes(header[2:4], byteorder="big")
         self.correlation_id = int.from_bytes(header[4:8], byteorder="big")
         self.client_id = int.from_bytes(header[8:], byteorder="big")
-        self.tagged_fields = b""  # No tagged fields for us
         self.body = body
 
     def to_bytes(self):
@@ -115,7 +114,8 @@ def process_request(data: bytes) -> bytes:
         int(18).to_bytes(2, byteorder="big") +  # api_key: 18 (2 bytes)
         int(4).to_bytes(2, byteorder="big") +  # min_version: 4 (2 bytes)
         int(4).to_bytes(2, byteorder="big") +  # max_version: 4 (2 bytes)
-        int(0).to_bytes(4, byteorder="big")    # throttle_time_ms: 0 (4 bytes)
+        int(0).to_bytes(4, byteorder="big") +  # throttle_time_ms: 0 (4 bytes)
+        b"\x00"  # Tagged fields array: empty (1 byte, unsigned varint 0)
     )
 
     # Construct the full response message
