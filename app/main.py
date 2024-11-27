@@ -70,7 +70,9 @@
 # if __name__ == "__main__":
 #     main()
 
+
 import socket
+from dataclasses import dataclass
 from enum import Enum, unique
 
 @unique
@@ -78,101 +80,91 @@ class ErrorCode(Enum):
     NONE = 0
     UNSUPPORTED_VERSION = 35
 
-def parse_request(data):
-    """
-    Parses the received request data into a Kafka-like structure.
-    Args:
-        data (bytes): The raw data received from the client.
-    Returns:
-        dict: Parsed request data with keys 'api_key', 'api_version', and 'correlation_id'.
-    """
-    if len(data) < 12:
-        raise ValueError("Incomplete Kafka request received.")
-    return {
-        "api_key": int.from_bytes(data[4:6], byteorder="big"),
-        "api_version": int.from_bytes(data[6:8], byteorder="big"),
-        "correlation_id": int.from_bytes(data[8:12], byteorder="big"),
-    }
+@dataclass
+class KafkaRequest:
+    api_key: int
+    api_version: int
+    correlation_id: int
 
-def construct_response(request):
-    """
-    Constructs a Kafka-style response based on the given request.
-    Args:
-        request (dict): Parsed request data.
-    Returns:
-        bytes: The constructed response message.
-    """
+    @staticmethod
+    def from_client(client: socket.socket):
+        # Receive 2048 bytes of data
+        data = client.recv(2048)
+        if len(data) < 12:
+            raise ValueError("Incomplete Kafka request received.")
+        return KafkaRequest(
+            api_key=int.from_bytes(data[4:6], byteorder="big"),
+            api_version=int.from_bytes(data[6:8], byteorder="big"),
+            correlation_id=int.from_bytes(data[8:12], byteorder="big"),
+        )
+
+class KafkaMessage:
+    def __init__(self, header: bytes, body: bytes):
+        self.header = header
+        self.body = body
+        self.size = len(header) + len(body)
+
+    def to_bytes(self):
+        return self.size.to_bytes(4, byteorder="big") + self.header + self.body
+
+    def __repr__(self):
+        return f"Size: {self.size}, Header: {self.header.hex()}, Body: {self.body.hex()}"
+
+def make_response(request: KafkaRequest):
     # Header
-    correlation_id = request["correlation_id"]
-    response_header = correlation_id.to_bytes(4, byteorder="big")
+    response_header = request.correlation_id.to_bytes(4, byteorder="big")
 
     # Validate API version
     valid_api_versions = [0, 1, 2, 3, 4]
     error_code = (
         ErrorCode.NONE.value
-        if request["api_version"] in valid_api_versions
+        if request.api_version in valid_api_versions
         else ErrorCode.UNSUPPORTED_VERSION.value
     )
 
     # Body
-    api_key = request["api_key"]
     min_version, max_version = 0, 4
     throttle_time_ms = 0
     tag_buffer = b"\x00"
     response_body = (
         error_code.to_bytes(2, byteorder="big")  # error_code: 2 bytes
         + int(1).to_bytes(1, byteorder="big")  # num_api_keys: 1 byte
-        + api_key.to_bytes(2, byteorder="big")  # api_key: 2 bytes
+        + request.api_key.to_bytes(2, byteorder="big")  # api_key: 2 bytes
         + min_version.to_bytes(2, byteorder="big")  # min_version: 2 bytes
         + max_version.to_bytes(2, byteorder="big")  # max_version: 2 bytes
         + throttle_time_ms.to_bytes(4, byteorder="big")  # throttle_time_ms: 4 bytes
         + tag_buffer  # TAG_BUFFER: 1 byte
     )
-
+    
     # Combine header and body
-    response = response_header + response_body
-    response_size = len(response).to_bytes(4, byteorder="big")
-    return response_size + response
+    return KafkaMessage(response_header, response_body)
 
-def handle_client(client_socket):
-    """
-    Handles communication with a connected client.
-    Args:
-        client_socket (socket.socket): The client's socket connection.
-    """
-    try:
-        while True:
-            # Receive data from client
-            data = client_socket.recv(2048)
-            if not data:
-                print("Client disconnected.")
-                break
-
-            # Parse the request
-            request = parse_request(data)
-            print(f"Received request: {request}")
-
-            # Construct and send response
-            response = construct_response(request)
-            print(f"Sending response: {response.hex()}")
-            client_socket.sendall(response)
-
-    except (ConnectionResetError, ValueError) as e:
-        print(f"Connection error: {e}")
-    finally:
-        client_socket.close()
-        print("Client connection closed.")
-
-def start_server():
-    """
-    Starts the Kafka-like server to listen for client connections.
-    """
+def main():
+    # Create the server
     with socket.create_server(("localhost", 9092), reuse_port=True) as server:
         print("Server is listening on port 9092...")
-        while True:
-            client_socket, address = server.accept()
-            print(f"Client connected from {address}")
-            handle_client(client_socket)
+        client, address = server.accept()
+        print(f"Client connected: {address}")
+
+        try:
+            while True:
+                # Receive and parse request
+                request = KafkaRequest.from_client(client)
+                print(f"Received request: {request}")
+
+                # Generate response
+                response = make_response(request)
+                print(f"Sending response: {response}")
+
+                # Send response
+                client.sendall(response.to_bytes())
+
+        except (ConnectionResetError, ValueError) as e:
+            print(f"Connection closed: {e}")
+        finally:
+            client.close()
+            print("Client disconnected.")
 
 if __name__ == "__main__":
-    start_server()
+    main()
+
