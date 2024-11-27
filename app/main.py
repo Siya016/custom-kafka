@@ -135,8 +135,8 @@ def handle_api_versions_request(request: Message) -> Message:
         int(0).to_bytes(2, byteorder="big") +    # min_version: 2 bytes
         int(4).to_bytes(2, byteorder="big") +    # max_version: 2 bytes (at least 4 as required)
         
-        # TAG_BUFFER: empty tagged fields
-        int(0).to_bytes(4, byteorder="big")      # length of tagged fields (0)
+        # No tagged fields 
+        int(0).to_bytes(2, byteorder="big")      # number of tagged fields (2 bytes)
     )
 
     # Construct and return the full response message
