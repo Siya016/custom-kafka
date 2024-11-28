@@ -87,65 +87,86 @@
 
 
 
-import socket  # noqa: F401
-class Message:
-    header = None
-    payload = None
-    def parse(self, msg):
-        apiKey = int.from_bytes(msg[4:6], byteorder="big")
-        apiVersion = int.from_bytes(msg[6:8], byteorder="big")
-        coRelationId = int.from_bytes(msg[8:12], byteorder="big")
-        return [apiKey, apiVersion, coRelationId]
-    def __init__(self, msg):
-        if msg == None:
-            return
-        self.apiKey, self.apiVersion, self.coRelationId = self.parse(msg)
-    def toBytes(self):
-        headerByte = self.header.to_bytes(4, byteorder="big")
-        payloadByte = self.payload if self.payload != None else int(0).to_bytes(0)
-        return (
-            len(headerByte + payloadByte).to_bytes(4, byteorder="big")
-            + headerByte
-            + payloadByte
-        )
-class Request:
-    def __init__(self, request):
-        self.request = request
-        self.message = Message(request)
-# def message(cid):
-#     idByte = cid.to_bytes(4, byteorder="big")
-#     header = len(idByte).to_bytes(4, byteorder="big")
-#     return header + idByte
-def handleClient(client):
-    req = client.recv(1024)
-    request = Request(req)
-    response = Message(None)
-    response.header = request.message.coRelationId
-    valid_api_versions = [0, 1, 2, 3, 4]
-    response.payload = int(
-        0 if request.message.apiVersion in valid_api_versions else 35
-    ).to_bytes(2, byteorder="big")
-    response.payload += int(1 + 1).to_bytes(1, byteorder="big")
-    response.payload += int(request.message.apiKey).to_bytes(2, byteorder="big")
-    response.payload += int(0).to_bytes(2, byteorder="big")
-    response.payload += int(4).to_bytes(2, byteorder="big")
-    response.payload += int(0).to_bytes(2, byteorder="big")
-    response.payload += int(0).to_bytes(4, byteorder="big")
-    client.sendall(response.toBytes())
+# 
+
+
+import socket
+
+def parse_message(msg):
+    """
+    Parses a Kafka request message and extracts apiKey, apiVersion, and coRelationId.
+    """
+    api_key = int.from_bytes(msg[4:6], byteorder="big")
+    api_version = int.from_bytes(msg[6:8], byteorder="big")
+    correlation_id = int.from_bytes(msg[8:12], byteorder="big")
+    return api_key, api_version, correlation_id
+
+def construct_response(correlation_id, api_key, api_version):
+    """
+    Constructs a Kafka response message based on the request details.
+    """
+    # Create the header (correlation ID)
+    header = correlation_id.to_bytes(4, byteorder="big")
     
-    # client.close()
-def main():
-    # You can use print statements as follows for debugging,
-    # they'll be visible when running tests.
-    print("Logs from your program will appear here!")
-    # Uncomment this to pass the first stage
-    #
-    server = socket.create_server(("localhost", 9092), reuse_port=True)
+    # Determine the payload
+    valid_api_versions = [0, 1, 2, 3, 4]
+    error_code = 0 if api_version in valid_api_versions else 35
+    payload = error_code.to_bytes(2, byteorder="big")  # Error code
+    payload += int(1 + 1).to_bytes(1, byteorder="big")  # Number of API keys (fixed)
+    payload += api_key.to_bytes(2, byteorder="big")     # Echoed apiKey
+    payload += int(0).to_bytes(2, byteorder="big")      # Placeholder version
+    payload += int(4).to_bytes(2, byteorder="big")      # Placeholder flags
+    payload += int(0).to_bytes(2, byteorder="big")      # Additional placeholder
+    payload += int(0).to_bytes(4, byteorder="big")      # Final placeholder
+    
+    # Combine header and payload
+    response_length = len(header + payload)
+    response = response_length.to_bytes(4, byteorder="big") + header + payload
+    return response
+
+def handle_client(client):
+    """
+    Handles a single client connection, processing one or more requests.
+    """
+    request = client.recv(1024)
+    if not request:
+        return
+    
+    # Parse the request
+    api_key, api_version, correlation_id = parse_message(request)
+    
+    # Construct the response
+    response = construct_response(correlation_id, api_key, api_version)
+    
+    # Send the response to the client
+    client.sendall(response)
+
+def start_server(host="localhost", port=9092):
+    """
+    Starts the Kafka-like server on the specified host and port.
+    """
+    print("Starting server...")
+    server = socket.create_server((host, port), reuse_port=True)
+    
     while True:
-        client, addr = server.accept()  # wait for client
+        # Accept a client connection
+        client, addr = server.accept()
+        print(f"Client connected from {addr}")
         
-        while True:
-            handleClient(client)
+        # Handle the client's requests
+        try:
+            while True:
+                handle_client(client)
+        except ConnectionResetError:
+            print(f"Connection with {addr} closed.")
+        finally:
+            client.close()
+
+def main():
+    """
+    Entry point for the program.
+    """
+    start_server()
+
 if __name__ == "__main__":
     main()
-
