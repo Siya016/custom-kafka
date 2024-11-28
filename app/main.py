@@ -90,7 +90,89 @@
 # 
 
 
+# import socket
+
+# def parse_message(msg):
+#     """
+#     Parses a Kafka request message and extracts apiKey, apiVersion, and coRelationId.
+#     """
+#     api_key = int.from_bytes(msg[4:6], byteorder="big")
+#     api_version = int.from_bytes(msg[6:8], byteorder="big")
+#     correlation_id = int.from_bytes(msg[8:12], byteorder="big")
+#     return api_key, api_version, correlation_id
+
+# def construct_response(correlation_id, api_key, api_version):
+#     """
+#     Constructs a Kafka response message based on the request details.
+#     """
+#     # Create the header (correlation ID)
+#     header = correlation_id.to_bytes(4, byteorder="big")
+    
+#     # Determine the payload
+#     valid_api_versions = [0, 1, 2, 3, 4]
+#     error_code = 0 if api_version in valid_api_versions else 35
+#     payload = error_code.to_bytes(2, byteorder="big")  # Error code
+#     payload += int(1 + 1).to_bytes(1, byteorder="big")  # Number of API keys (fixed)
+#     payload += api_key.to_bytes(2, byteorder="big")     # Echoed apiKey
+#     payload += int(0).to_bytes(2, byteorder="big")      # Placeholder version
+#     payload += int(4).to_bytes(2, byteorder="big")      # Placeholder flags
+#     payload += int(0).to_bytes(2, byteorder="big")      # Additional placeholder
+#     payload += int(0).to_bytes(4, byteorder="big")      # Final placeholder
+    
+#     # Combine header and payload
+#     response_length = len(header + payload)
+#     response = response_length.to_bytes(4, byteorder="big") + header + payload
+#     return response
+
+# def handle_client(client):
+#     """
+#     Handles a single client connection, processing one or more requests.
+#     """
+#     request = client.recv(1024)
+#     if not request:
+#         return
+    
+#     # Parse the request
+#     api_key, api_version, correlation_id = parse_message(request)
+    
+#     # Construct the response
+#     response = construct_response(correlation_id, api_key, api_version)
+    
+#     # Send the response to the client
+#     client.sendall(response)
+
+# def start_server(host="localhost", port=9092):
+#     """
+#     Starts the Kafka-like server on the specified host and port.
+#     """
+#     print("Starting server...")
+#     server = socket.create_server((host, port), reuse_port=True)
+    
+#     while True:
+#         # Accept a client connection
+#         client, addr = server.accept()
+#         print(f"Client connected from {addr}")
+        
+#         # Handle the client's requests
+#         try:
+#             while True:
+#                 handle_client(client)
+#         except ConnectionResetError:
+#             print(f"Connection with {addr} closed.")
+#         finally:
+#             client.close()
+
+# def main():
+#     """
+#     Entry point for the program.
+#     """
+#     start_server()
+
+# if __name__ == "__main__":
+#     main()
+
 import socket
+import threading
 
 def parse_message(msg):
     """
@@ -111,35 +193,45 @@ def construct_response(correlation_id, api_key, api_version):
     # Determine the payload
     valid_api_versions = [0, 1, 2, 3, 4]
     error_code = 0 if api_version in valid_api_versions else 35
+    
+    # Construct the payload
     payload = error_code.to_bytes(2, byteorder="big")  # Error code
-    payload += int(1 + 1).to_bytes(1, byteorder="big")  # Number of API keys (fixed)
-    payload += api_key.to_bytes(2, byteorder="big")     # Echoed apiKey
-    payload += int(0).to_bytes(2, byteorder="big")      # Placeholder version
-    payload += int(4).to_bytes(2, byteorder="big")      # Placeholder flags
-    payload += int(0).to_bytes(2, byteorder="big")      # Additional placeholder
-    payload += int(0).to_bytes(4, byteorder="big")      # Final placeholder
+    payload += int(1).to_bytes(1, byteorder="big")     # Number of API keys supported (at least one entry for API_VERSIONS)
+    payload += api_key.to_bytes(2, byteorder="big")    # Echoed apiKey (API_VERSIONS)
+    payload += int(0).to_bytes(2, byteorder="big")     # MinVersion (fixed to 0)
+    payload += int(4).to_bytes(2, byteorder="big")     # MaxVersion (at least 4 for API_VERSIONS)
+    payload += int(0).to_bytes(2, byteorder="big")     # Additional placeholder
+    payload += int(0).to_bytes(4, byteorder="big")     # Final placeholder
     
     # Combine header and payload
     response_length = len(header + payload)
     response = response_length.to_bytes(4, byteorder="big") + header + payload
     return response
 
-def handle_client(client):
+def handle_client(client, addr):
     """
     Handles a single client connection, processing one or more requests.
     """
-    request = client.recv(1024)
-    if not request:
-        return
-    
-    # Parse the request
-    api_key, api_version, correlation_id = parse_message(request)
-    
-    # Construct the response
-    response = construct_response(correlation_id, api_key, api_version)
-    
-    # Send the response to the client
-    client.sendall(response)
+    print(f"Handling client from {addr}")
+    try:
+        while True:
+            request = client.recv(1024)
+            if not request:
+                break  # Client disconnected
+            
+            # Parse the request
+            api_key, api_version, correlation_id = parse_message(request)
+            
+            # Construct the response
+            response = construct_response(correlation_id, api_key, api_version)
+            
+            # Send the response to the client
+            client.sendall(response)
+    except ConnectionResetError:
+        print(f"Connection with {addr} reset by client.")
+    finally:
+        client.close()
+        print(f"Connection with {addr} closed.")
 
 def start_server(host="localhost", port=9092):
     """
@@ -147,20 +239,16 @@ def start_server(host="localhost", port=9092):
     """
     print("Starting server...")
     server = socket.create_server((host, port), reuse_port=True)
+    server.listen()  # Enable listening for incoming connections
     
     while True:
         # Accept a client connection
         client, addr = server.accept()
         print(f"Client connected from {addr}")
         
-        # Handle the client's requests
-        try:
-            while True:
-                handle_client(client)
-        except ConnectionResetError:
-            print(f"Connection with {addr} closed.")
-        finally:
-            client.close()
+        # Handle the client's requests in a new thread
+        thread = threading.Thread(target=handle_client, args=(client, addr), daemon=True)
+        thread.start()
 
 def main():
     """
