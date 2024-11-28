@@ -1,4 +1,4 @@
-from socket import create_server
+# from socket import create_server
 
 class Message:
     header: bytes
@@ -24,65 +24,65 @@ class Message:
             f"{self.body}"
         )
 
-def main():
-    server = create_server(("localhost", 9092), reuse_port=True)
-    socket, address = server.accept()  # wait for client
-    print(f"Client connected: {address}")
 
-    # Receive data from the client
-    data = socket.recv(1024)
-    print(f"Received data: {data.hex()}")
-
-    # Parse the received request (skip first 4 bytes and initialize the Message object)
-    request = Message(data[4:], b"")
+def handle_request(data: bytes) -> bytes:
+    """
+    Handles a single request from the client and constructs the appropriate response.
+    """
+    request = Message(data[4:], b"")  # Skip the first 4 bytes for size
     print(f"Received request: {request}")
 
     # Check if the API version is supported (error code 0 for valid versions, 35 for unsupported)
     error_code = 0 if request.request_api_version in [0, 1, 2, 3, 4] else 35
 
     # Construct the response message
-    # Kafka ApiVersion V3 Response | Ref: https://kafka.apache.org/protocol.html#The_Messages_ApiVersions
-    # error_code [api_keys] throttle_time_ms TAG_BUFFER
     response_header = request.correlation_id.to_bytes(4, byteorder="big")
 
-    # ApiVersions response body (including error_code, api_keys, throttle_time_ms)
-    # response_body = (
-    #     error_code.to_bytes(2, byteorder="big") +  # error_code: 2 bytes
-    #     int(1 + 1).to_bytes(1, byteorder="big") +  # num_api_keys: 1 byte (1 key + 1 entry for API key 18)
-    #     int(18).to_bytes(2, byteorder="big") +  # api_key: 18 (2 bytes)
-    #     int(4).to_bytes(2, byteorder="big") +  # min_version: 4 (2 bytes)
-    #     int(4).to_bytes(2, byteorder="big") +  # max_version: 4 (2 bytes)
-    #     int(0).to_bytes(2, byteorder="big") +  # TAG_BUFFER: 0 (2 bytes)
-    #     int(0).to_bytes(4, byteorder="big")  # throttle_time_ms: 0 (4 bytes)
-    # )
-
+    # ApiVersions response body
     response_body = (
         error_code.to_bytes(2, byteorder="big") +  # error_code: 2 bytes
-        int(1).to_bytes(1, byteorder="big") +  # num_api_keys: 1 byte (1 key)
-        int(18).to_bytes(2, byteorder="big") +  # api_key: 18 (2 bytes)
-        int(4).to_bytes(2, byteorder="big") +  # min_version: 4 (2 bytes)
-        int(4).to_bytes(2, byteorder="big") +  # max_version: 4 (2 bytes)
-        # int(0).to_bytes(2, byteorder="big") +  # TAG_BUFFER: 0 (2 bytes, may not be necessary)
-        int(0).to_bytes(4, byteorder="big")  # throttle_time_ms: 0 (4 bytes)
+        int(1).to_bytes(1, byteorder="big") +  # num_api_keys: 1 byte
+        int(18).to_bytes(2, byteorder="big") +  # api_key: 18 (API_VERSIONS)
+        int(4).to_bytes(2, byteorder="big") +  # min_version: 4
+        int(4).to_bytes(2, byteorder="big") +  # max_version: 4
+        int(0).to_bytes(4, byteorder="big")  # throttle_time_ms: 0
     )
 
-# Ensure the size of the message includes both header and body
     response_size = len(response_header + response_body)
 
     # Construct the full response message
-    while True:
-        message = Message(response_header, response_body)
-        print(f"Sending message: {message.to_bytes().hex()}")
-        print(f"Sending message with size: {response_size} bytes")
-        print(f"Full response message: {message.to_bytes().hex()}")
+    response = response_size.to_bytes(4, byteorder="big") + response_header + response_body
+    print(f"Constructed response: {response.hex()}")
+    return response
 
-        # Send the response back to the client
-        socket.sendall(message.to_bytes())
 
-        # Close the connection
-        # socket.close()
-        # print("Connection closed.")
+def main():
+    server = create_server(("localhost", 9092), reuse_port=True)
+    print("Server started and listening on port 9092...")
+    
+    client_socket, client_address = server.accept()  # Wait for client
+    print(f"Client connected: {client_address}")
+
+    try:
+        while True:
+            data = client_socket.recv(1024)
+            if not data:
+                print("No more data received. Closing connection.")
+                break
+
+            print(f"Received data: {data.hex()}")
+
+            # Handle the request and generate a response
+            response = handle_request(data)
+
+            # Send the response back to the client
+            client_socket.sendall(response)
+    except Exception as e:
+        print(f"An error occurred: {e}")
+    finally:
+        client_socket.close()
+        print("Connection closed.")
+
 
 if __name__ == "__main__":
     main()
-
