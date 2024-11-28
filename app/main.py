@@ -198,35 +198,28 @@ def construct_response(correlation_id, api_key, api_version):
     # Determine the payload
     valid_api_versions = [0, 1, 2, 3, 4]
     error_code = 0 if api_version in valid_api_versions else 35
-    # payload = error_code.to_bytes(2, byteorder="big")  # Error code
+    payload = error_code.to_bytes(2, byteorder="big")  # Error code
     # payload += int(1 + 1).to_bytes(1, byteorder="big")  # Number of API keys (fixed)
     # payload += api_key.to_bytes(2, byteorder="big")     # Echoed apiKey
-    # payload += int(0).to_bytes(2, byteorder="big")      # Placeholder version
-    # payload += int(4).to_bytes(2, byteorder="big")      # Placeholder flags
-    # payload += int(0).to_bytes(2, byteorder="big")      # Additional placeholder
-    # payload += int(0).to_bytes(4, byteorder="big")      # Final placeholder
-
-
-    payload = error_code.to_bytes(2, byteorder="big")  # Error code
-    
-    # Number of API keys (2 in this case: ApiVersions and DescribeTopicPartitions)
     payload += int(2).to_bytes(1, byteorder="big")
     
     # Entry for API key 18 (ApiVersions)
     payload += int(18).to_bytes(2, byteorder="big")   # API key 18 (ApiVersions)
-    payload += int(0).to_bytes(2, byteorder="big")     # Placeholder version (min version 0)
-    payload += int(4).to_bytes(2, byteorder="big")     # Max version for ApiVersions (4)
+    payload += int(0).to_bytes(2, byteorder="big")     # Min version for ApiVersions
+    payload += int(4).to_bytes(2, byteorder="big")     # Max version for ApiVersions
     
     # Entry for API key 75 (DescribeTopicPartitions)
     payload += int(75).to_bytes(2, byteorder="big")   # API key 75 (DescribeTopicPartitions)
-    payload += int(0).to_bytes(2, byteorder="big")    # Placeholder version (min version 0)
-    payload += int(0).to_bytes(2, byteorder="big")    # Max version for DescribeTopicPartitions (0)
+    payload += int(0).to_bytes(2, byteorder="big")    # Min version for DescribeTopicPartitions
+    payload += int(0).to_bytes(2, byteorder="big")    # Max version for DescribeTopicPartitions
     
-    # Additional placeholders
-    payload += int(0).to_bytes(2, byteorder="big")    # Placeholder
-    payload += int(4).to_bytes(2, byteorder="big")    # Placeholder flags
-    payload += int(0).to_bytes(2, byteorder="big")    # More placeholders
-    payload += int(0).to_bytes(4, byteorder="big")    # Final placeholder
+    # Additional placeholders for consistent respon
+    payload += int(0).to_bytes(2, byteorder="big")      # Placeholder version
+    payload += int(4).to_bytes(2, byteorder="big")      # Placeholder flags
+    payload += int(0).to_bytes(2, byteorder="big")      # Additional placeholder
+    payload += int(0).to_bytes(4, byteorder="big")      # Final placeholder
+
+
     
     
     # Combine header and payload
