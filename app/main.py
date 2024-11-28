@@ -173,6 +173,9 @@
 
 
 
+
+
+
 import socket
 import threading
 
@@ -196,12 +199,12 @@ def construct_response(correlation_id, api_key, api_version):
     valid_api_versions = [0, 1, 2, 3, 4]
     error_code = 0 if api_version in valid_api_versions else 35
     payload = error_code.to_bytes(2, byteorder="big")  # Error code
-    payload += int(1).to_bytes(1, byteorder="big")     # Number of API keys (fixed to 1)
-    payload += api_key.to_bytes(2, byteorder="big")    # Echoed apiKey (18 for API_VERSIONS)
-    payload += int(0).to_bytes(2, byteorder="big")     # MinVersion (0)
-    payload += int(4).to_bytes(2, byteorder="big")     # MaxVersion (4)
-    payload += int(0).to_bytes(2, byteorder="big")     # Additional placeholder
-    payload += int(0).to_bytes(4, byteorder="big")     # ThrottleTimeMs (0)
+    payload += int(1 + 1).to_bytes(1, byteorder="big")  # Number of API keys (fixed)
+    payload += api_key.to_bytes(2, byteorder="big")     # Echoed apiKey
+    payload += int(0).to_bytes(2, byteorder="big")      # Placeholder version
+    payload += int(4).to_bytes(2, byteorder="big")      # Placeholder flags
+    payload += int(0).to_bytes(2, byteorder="big")      # Additional placeholder
+    payload += int(0).to_bytes(4, byteorder="big")      # Final placeholder
     
     # Combine header and payload
     response_length = len(header + payload)
