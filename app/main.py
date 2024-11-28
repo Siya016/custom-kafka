@@ -289,28 +289,50 @@ def construct_response(correlation_id, api_key, api_version):
     # Default response error code (valid for API versions 0-4)
     valid_api_versions = [0, 1, 2, 3, 4]
     error_code = 0 if api_version in valid_api_versions else 35
+     # Number of API keys
     
     # Construct the payload based on api_key
-    if api_key == 18:  # APIVersions
-        # Construct the APIVersionsResponse
-        payload = error_code.to_bytes(2, byteorder="big")  # Error code
-        payload += len([18, 75]).to_bytes(1, byteorder="big")  # Number of API keys
-        api_key_18 = 18
-        payload += api_key_18.to_bytes(2, byteorder="big")  # API Key 18
-        payload += int(0).to_bytes(2, byteorder="big")  # MinVersion
-        payload += int(4).to_bytes(2, byteorder="big")  # MaxVersion
-        payload += int(75).to_bytes(2, byteorder="big")  # API Key 75 (DescribeTopicPartitions)
-        payload += int(0).to_bytes(2, byteorder="big")  # MinVersion
-        payload += int(0).to_bytes(2, byteorder="big")  # MaxVersion
-    elif api_key == 75:  # DescribeTopicPartitions
-        # Construct a DescribeTopicPartitions response
-        payload = error_code.to_bytes(2, byteorder="big")  # Error code
-        payload += int(0).to_bytes(2, byteorder="big")  # Placeholder response for DescribeTopicPartitions
-    else:
-        # Default error code if the API key is unknown
-        payload = error_code.to_bytes(2, byteorder="big")  # Error code
-        payload += int(0).to_bytes(2, byteorder="big")  # Placeholder version
-        payload += int(4).to_bytes(2, byteorder="big")  # Placeholder flags
+    # if api_key == 18:  # APIVersions
+    #     # Construct the APIVersionsResponse
+    #     payload = error_code.to_bytes(2, byteorder="big")  # Error code
+    #     payload += len([18, 75]).to_bytes(1, byteorder="big")  # Number of API keys
+    #     api_key_18 = 18
+    #     payload += api_key_18.to_bytes(2, byteorder="big")  # API Key 18
+    #     payload += int(0).to_bytes(2, byteorder="big")  # MinVersion
+    #     payload += int(4).to_bytes(2, byteorder="big")  # MaxVersion
+    #     payload += int(75).to_bytes(2, byteorder="big")  # API Key 75 (DescribeTopicPartitions)
+    #     payload += int(0).to_bytes(2, byteorder="big")  # MinVersion
+    #     payload += int(0).to_bytes(2, byteorder="big")  # MaxVersion
+    # elif api_key == 75:  # DescribeTopicPartitions
+    #     # Construct a DescribeTopicPartitions response
+    #     payload = error_code.to_bytes(2, byteorder="big")  # Error code
+    #     payload += int(0).to_bytes(2, byteorder="big")  # Placeholder response for DescribeTopicPartitions
+        
+    # else:
+    #     # Default error code if the API key is unknown
+    #     payload = error_code.to_bytes(2, byteorder="big")  # Error code
+    #     payload += int(0).to_bytes(2, byteorder="big")  # Placeholder version
+    #     payload += int(4).to_bytes(2, byteorder="big")  # Placeholder flags
+    
+    # # Combine header and payload
+    # response_length = len(header + payload)
+    # response = response_length.to_bytes(4, byteorder="big") + header + payload
+    # return response
+
+    payload = error_code.to_bytes(2, byteorder="big")  # Error code
+    
+    # Number of API keys included in the response (2 keys: 18 and 75)
+    payload += len([18, 75]).to_bytes(1, byteorder="big")  # Number of API keys (2 keys)
+    
+    # API Key 18 (APIVersions)
+    payload += int(18).to_bytes(2, byteorder="big")  # API Key 18
+    payload += int(0).to_bytes(2, byteorder="big")  # MinVersion
+    payload += int(4).to_bytes(2, byteorder="big")  # MaxVersion
+    
+    # API Key 75 (DescribeTopicPartitions)
+    payload += int(75).to_bytes(2, byteorder="big")  # API Key 75
+    payload += int(0).to_bytes(2, byteorder="big")  # MinVersion
+    payload += int(0).to_bytes(2, byteorder="big")  # MaxVersion
     
     # Combine header and payload
     response_length = len(header + payload)
