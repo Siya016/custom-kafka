@@ -279,10 +279,16 @@ def parse_message(msg):
     return api_key, api_version, correlation_id
 
 
-def construct_response(correlation_id, api_key, api_version):
+def construct_response(correlation_id, api_version):
     """
-    Constructs a Kafka response message for ApiVersionsResponse.
-    Dynamically handles the specified API key.
+    Constructs a Kafka ApiVersionsResponse (version 4).
+    
+    Parameters:
+    - correlation_id (int): The correlation ID from the request.
+    - api_version (int): The API version of the request.
+
+    Returns:
+    - bytes: The constructed ApiVersionsResponse.
     """
     # Create the header (correlation ID)
     header = correlation_id.to_bytes(4, byteorder="big")
@@ -291,33 +297,87 @@ def construct_response(correlation_id, api_key, api_version):
     valid_api_versions = [0, 1, 2, 3, 4]
     error_code = 0 if api_version in valid_api_versions else 35
 
-    # Supported API keys and their version ranges
+    # Define supported API keys and their version ranges
     supported_api_keys = {
-        18: (0, 4),  # APIVersions
-        75: (0, 0),  # DescribeTopicPartitions
+        18: (0, 4),  # ApiVersions: MinVersion = 0, MaxVersion = 4
+        75: (0, 0),  # DescribeTopicPartitions: MinVersion = 0, MaxVersion = 0
     }
 
-    # Validate the provided API key
-    if api_key not in supported_api_keys:
-        raise ValueError(f"Unsupported API key: {api_key}")
+    # Construct the payload fields
+    throttle_time_ms = (0).to_bytes(4, byteorder="big")  # No throttling
+    error_code_bytes = error_code.to_bytes(2, byteorder="big")
+    num_api_keys = len(supported_api_keys)
+    num_api_keys_bytes = num_api_keys.to_bytes(4, byteorder="big")
 
-    # Retrieve version details for the given API key
-    min_version, max_version = supported_api_keys[api_key]
+    # Build API keys section
+    api_keys_payload = b""
+    for api_key, (min_version, max_version) in supported_api_keys.items():
+        api_keys_payload += api_key.to_bytes(2, byteorder="big")  # API Key
+        api_keys_payload += min_version.to_bytes(2, byteorder="big")  # Min Version
+        api_keys_payload += max_version.to_bytes(2, byteorder="big")  # Max Version
 
-    # Construct the payload
-    payload = error_code.to_bytes(2, byteorder="big")  # Error code
-    payload += (1).to_bytes(1, byteorder="big")  # Number of API keys (always 1 in this case)
-    payload += api_key.to_bytes(2, byteorder="big")  # API Key
-    payload += min_version.to_bytes(2, byteorder="big")  # MinVersion
-    payload += max_version.to_bytes(2, byteorder="big")  # MaxVersion
+    # Tagged fields (1 byte, empty)
+    tagged_fields = (0).to_bytes(1, byteorder="big")
 
-    # Combine header and payload
-    response = header + payload
+    # Combine all parts of the response body
+    response_body = (
+        throttle_time_ms
+        + error_code_bytes
+        + num_api_keys_bytes
+        + api_keys_payload
+        + tagged_fields
+    )
 
-    # Prepend the response length
+    # Combine header and body
+    response = header + response_body
+
+    # Prepend the response length (4 bytes)
     response_length = len(response)
     full_response = response_length.to_bytes(4, byteorder="big") + response
+
     return full_response
+
+
+
+# def construct_response(correlation_id, api_key, api_version):
+#     """
+#     Constructs a Kafka response message for ApiVersionsResponse.
+#     Dynamically handles the specified API key.
+#     """
+#     # Create the header (correlation ID)
+#     header = correlation_id.to_bytes(4, byteorder="big")
+
+#     # Default response error code (valid for API versions 0-4)
+#     valid_api_versions = [0, 1, 2, 3, 4]
+#     error_code = 0 if api_version in valid_api_versions else 35
+
+#     # Supported API keys and their version ranges
+#     supported_api_keys = {
+#         18: (0, 4),  # APIVersions
+#         75: (0, 0),  # DescribeTopicPartitions
+#     }
+
+#     # Validate the provided API key
+#     if api_key not in supported_api_keys:
+#         raise ValueError(f"Unsupported API key: {api_key}")
+
+#     # Retrieve version details for the given API key
+#     min_version, max_version = supported_api_keys[api_key]
+
+#     # Construct the payload
+#     payload = error_code.to_bytes(2, byteorder="big")  # Error code
+#     payload += (1).to_bytes(1, byteorder="big")  # Number of API keys (always 1 in this case)
+#     payload += api_key.to_bytes(2, byteorder="big")  # API Key
+#     payload += min_version.to_bytes(2, byteorder="big")  # MinVersion
+#     payload += max_version.to_bytes(2, byteorder="big")  # MaxVersion
+
+#     # Combine header and payload
+#     response = header + payload
+
+#     # Prepend the response length
+#     response_length = len(response)
+#     full_response = response_length.to_bytes(4, byteorder="big") + response
+#     return full_response
 
 
 
