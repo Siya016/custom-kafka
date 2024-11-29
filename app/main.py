@@ -450,7 +450,7 @@ def construct_response(correlation_id, api_version):
     # Combine all parts of the response body
     response_body = (
         # throttle_time_ms
-        + error_code_bytes
+         error_code_bytes
         + num_api_keys_bytes
         + api_keys_payload
         # + tagged_fields
