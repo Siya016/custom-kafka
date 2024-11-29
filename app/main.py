@@ -432,7 +432,7 @@ def construct_response(correlation_id, api_version):
     error_code = 0 if api_version <= 4 else 35
 
     # Construct response fields
-    throttle_time_ms = (0).to_bytes(4, byteorder="big")  # No throttling
+    # throttle_time_ms = (0).to_bytes(4, byteorder="big")  # No throttling
     error_code_bytes = error_code.to_bytes(2, byteorder="big")
     num_api_keys = len(supported_api_keys)
     num_api_keys_bytes = num_api_keys.to_bytes(4, byteorder="big")
@@ -445,15 +445,15 @@ def construct_response(correlation_id, api_version):
         api_keys_payload += max_version.to_bytes(2, byteorder="big")  # Max Version
 
     # Tagged fields (1 byte, empty)
-    tagged_fields = (0).to_bytes(1, byteorder="big")
+    # tagged_fields = (0).to_bytes(1, byteorder="big")
 
     # Combine all parts of the response body
     response_body = (
-        throttle_time_ms
+        # throttle_time_ms
         + error_code_bytes
         + num_api_keys_bytes
         + api_keys_payload
-        + tagged_fields
+        # + tagged_fields
     )
 
     # Combine header and body
