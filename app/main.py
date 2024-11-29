@@ -445,7 +445,7 @@ def construct_response(correlation_id, api_version):
         api_keys_payload += max_version.to_bytes(2, byteorder="big")  # Max Version
 
     # Tagged fields (1 byte, empty)
-    # tagged_fields = (0).to_bytes(1, byteorder="big")
+    tagged_fields = (0).to_bytes(1, byteorder="big")
 
     # Combine all parts of the response body
     response_body = (
@@ -453,7 +453,7 @@ def construct_response(correlation_id, api_version):
          error_code_bytes
         + num_api_keys_bytes
         + api_keys_payload
-        # + tagged_fields
+         + tagged_fields
     )
 
     # Combine header and body
