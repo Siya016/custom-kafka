@@ -465,7 +465,6 @@ def construct_response(correlation_id, api_version):
 
     return full_response
 
-
 def handle_client(client, addr):
     """
     Handles a single client connection, processing one or more requests.
