@@ -278,40 +278,79 @@ def parse_message(msg):
     correlation_id = int.from_bytes(msg[8:12], byteorder="big")
     return api_key, api_version, correlation_id
 
+
 def construct_response(correlation_id, api_key, api_version):
     """
     Constructs a Kafka response message based on the request details.
-    Adds logic for APIVersions (API key 18) and DescribeTopicPartitions (API key 75).
+    Dynamically handles the specified API key and adds logic for 
+    APIVersions (API key 18) and DescribeTopicPartitions (API key 75).
     """
     # Create the header (correlation ID)
     header = correlation_id.to_bytes(4, byteorder="big")
-    
+
     # Default response error code (valid for API versions 0-4)
     valid_api_versions = [0, 1, 2, 3, 4]
     error_code = 0 if api_version in valid_api_versions else 35
     payload = error_code.to_bytes(2, byteorder="big")  # Error code
-    api_keys = [18, 75]  # Both API keys will be included
-    payload += len(api_keys).to_bytes(1, byteorder="big")  # Number of API keys (2)
-    
-    # API Key 18 (APIVersions)
-    payload += api_keys[0].to_bytes(2, byteorder="big")  # API Key 18
-    payload += int(0).to_bytes(2, byteorder="big")  # MinVersion
-    payload += int(4).to_bytes(2, byteorder="big")  # MaxVersion
-    
-    # API Key 75 (DescribeTopicPartitions)
-    payload += api_keys[1].to_bytes(2, byteorder="big")  # API Key 75
-    payload += int(0).to_bytes(2, byteorder="big")  # MinVersion
-    payload += int(0).to_bytes(2, byteorder="big")  # MaxVersion
-    
+
+    # Supported API keys and their version ranges
+    supported_api_keys = {
+        18: (0, 4),  # APIVersions
+        75: (0, 0),  # DescribeTopicPartitions
+    }
+
+    # Validate the provided API key
+    if api_key not in supported_api_keys:
+        raise ValueError(f"Unsupported API key: {api_key}")
+
+    # Include only the requested API key in the response
+    min_version, max_version = supported_api_keys[api_key]
+    payload += (1).to_bytes(1, byteorder="big")  # Number of API keys (always 1 in this case)
+    payload += api_key.to_bytes(2, byteorder="big")  # API Key
+    payload += min_version.to_bytes(2, byteorder="big")  # MinVersion
+    payload += max_version.to_bytes(2, byteorder="big")  # MaxVersion
+
     # Combine header and payload
     response_length = len(header + payload)
     response = response_length.to_bytes(4, byteorder="big") + header + payload
     return response
 
 
+
+# def construct_response(correlation_id, api_key, api_version):
+#     """
+#     Constructs a Kafka response message based on the request details.
+#     Adds logic for APIVersions (API key 18) and DescribeTopicPartitions (API key 75).
+#     """
+#     # Create the header (correlation ID)
+#     header = correlation_id.to_bytes(4, byteorder="big")
+    
+#     # Default response error code (valid for API versions 0-4)
+#     valid_api_versions = [0, 1, 2, 3, 4]
+#     error_code = 0 if api_version in valid_api_versions else 35
+#     payload = error_code.to_bytes(2, byteorder="big")  # Error code
+#     api_keys = [18, 75]  # Both API keys will be included
+#     payload += len(api_keys).to_bytes(1, byteorder="big")  # Number of API keys (2)
+    
+#     # API Key 18 (APIVersions)
+#     payload += api_keys[0].to_bytes(2, byteorder="big")  # API Key 18
+#     payload += int(0).to_bytes(2, byteorder="big")  # MinVersion
+#     payload += int(4).to_bytes(2, byteorder="big")  # MaxVersion
+    
+#     # API Key 75 (DescribeTopicPartitions)
+#     payload += api_keys[1].to_bytes(2, byteorder="big")  # API Key 75
+#     payload += int(0).to_bytes(2, byteorder="big")  # MinVersion
+#     payload += int(0).to_bytes(2, byteorder="big")  # MaxVersion
+    
+#     # Combine header and payload
+#     response_length = len(header + payload)
+#     response = response_length.to_bytes(4, byteorder="big") + header + payload
+#     return response
+
+
      
     
-    # Construct the payload based on api_key
+   # Construct the payload based on api_key
     # if api_key == 18:  # APIVersions
     #     # Construct the APIVersionsResponse
     #     payload = error_code.to_bytes(2, byteorder="big")  # Error code
