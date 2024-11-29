@@ -266,8 +266,137 @@
 #     main()
 
 
+# import socket
+# import threading
+
+# def parse_message(msg):
+#     """
+#     Parses a Kafka request message and extracts apiKey, apiVersion, and correlationId.
+#     """
+#     api_key = int.from_bytes(msg[4:6], byteorder="big")
+#     api_version = int.from_bytes(msg[6:8], byteorder="big")
+#     correlation_id = int.from_bytes(msg[8:12], byteorder="big")
+#     return api_key, api_version, correlation_id
+
+
+# def construct_response(correlation_id, api_version):
+#     """
+#     Constructs a Kafka ApiVersionsResponse (version 4).
+    
+#     Parameters:
+#     - correlation_id (int): The correlation ID from the request.
+#     - api_version (int): The API version of the request.
+
+#     Returns:
+#     - bytes: The constructed ApiVersionsResponse.
+#     """
+#     # Create the header (correlation ID)
+#     header = correlation_id.to_bytes(4, byteorder="big")
+
+#     # Default response error code (valid for API versions 0-4)
+#     valid_api_versions = [0, 1, 2, 3, 4]
+#     error_code = 0 if api_version in valid_api_versions else 35
+
+#     # Define supported API keys and their version ranges
+#     supported_api_keys = {
+#         18: (0, 4),  # ApiVersions: MinVersion = 0, MaxVersion = 4
+#         75: (0, 0),  # DescribeTopicPartitions: MinVersion = 0, MaxVersion = 0
+#     }
+
+#     # Construct the payload fields
+#     throttle_time_ms = (0).to_bytes(4, byteorder="big")  # No throttling
+#     error_code_bytes = error_code.to_bytes(2, byteorder="big")
+#     num_api_keys = len(supported_api_keys)
+#     num_api_keys_bytes = num_api_keys.to_bytes(4, byteorder="big")
+
+#     # Build API keys section
+#     api_keys_payload = b""
+#     for api_key, (min_version, max_version) in supported_api_keys.items():
+#         api_keys_payload += api_key.to_bytes(2, byteorder="big")  # API Key
+#         api_keys_payload += min_version.to_bytes(2, byteorder="big")  # Min Version
+#         api_keys_payload += max_version.to_bytes(2, byteorder="big")  # Max Version
+
+#     # Tagged fields (1 byte, empty)
+#     tagged_fields = (0).to_bytes(1, byteorder="big")
+
+#     # Combine all parts of the response body
+#     response_body = (
+#         throttle_time_ms
+#         + error_code_bytes
+#         + num_api_keys_bytes
+#         + api_keys_payload
+#         + tagged_fields
+#     )
+
+#     # Combine header and body
+#     response = header + response_body
+
+#     # Prepend the response length (4 bytes)
+#     response_length = len(response)
+#     full_response = response_length.to_bytes(4, byteorder="big") + response
+
+#     return full_response
+
+
+
+
+# def handle_client(client, addr):
+#     """
+#     Handles a single client connection, processing one or more requests.
+#     """
+#     print(f"Handling client from {addr}")
+#     try:
+#         while True:
+#             request = client.recv(1024)
+#             if not request:
+#                 break  # Client disconnected
+            
+#             # Parse the request
+#             api_key, api_version, correlation_id = parse_message(request)
+            
+#             # Construct the response
+#             response = construct_response(correlation_id, api_key, api_version)
+            
+#             # Send the response to the client
+#             client.sendall(response)
+#     except ConnectionResetError:
+#         print(f"Connection with {addr} reset by client.")
+#     finally:
+#         client.close()
+#         print(f"Connection with {addr} closed.")
+
+# def start_server(host="localhost", port=9092):
+#     """
+#     Starts the Kafka-like server on the specified host and port.
+#     """
+#     print("Starting server...")
+#     server = socket.create_server((host, port), reuse_port=True)
+#     server.listen()  # Enable listening for incoming connections
+    
+#     while True:
+#         # Accept a client connection
+#         client, addr = server.accept()
+#         print(f"Client connected from {addr}")
+        
+#         # Handle the client's requests in a new thread
+#         thread = threading.Thread(target=handle_client, args=(client, addr), daemon=True)
+#         thread.start()
+
+# def main():
+#     """
+#     Entry point for the program.
+#     """
+#     start_server()
+
+# if __name__ == "__main__":
+#     main()
+
+
+
+
 import socket
 import threading
+
 
 def parse_message(msg):
     """
@@ -282,7 +411,7 @@ def parse_message(msg):
 def construct_response(correlation_id, api_version):
     """
     Constructs a Kafka ApiVersionsResponse (version 4).
-    
+
     Parameters:
     - correlation_id (int): The correlation ID from the request.
     - api_version (int): The API version of the request.
@@ -293,17 +422,16 @@ def construct_response(correlation_id, api_version):
     # Create the header (correlation ID)
     header = correlation_id.to_bytes(4, byteorder="big")
 
-    # Default response error code (valid for API versions 0-4)
-    valid_api_versions = [0, 1, 2, 3, 4]
-    error_code = 0 if api_version in valid_api_versions else 35
-
     # Define supported API keys and their version ranges
     supported_api_keys = {
         18: (0, 4),  # ApiVersions: MinVersion = 0, MaxVersion = 4
         75: (0, 0),  # DescribeTopicPartitions: MinVersion = 0, MaxVersion = 0
     }
 
-    # Construct the payload fields
+    # Determine error code (0 = no error, 35 = UNSUPPORTED_VERSION)
+    error_code = 0 if api_version <= 4 else 35
+
+    # Construct response fields
     throttle_time_ms = (0).to_bytes(4, byteorder="big")  # No throttling
     error_code_bytes = error_code.to_bytes(2, byteorder="big")
     num_api_keys = len(supported_api_keys)
@@ -338,113 +466,6 @@ def construct_response(correlation_id, api_version):
     return full_response
 
 
-
-# def construct_response(correlation_id, api_key, api_version):
-#     """
-#     Constructs a Kafka response message for ApiVersionsResponse.
-#     Dynamically handles the specified API key.
-#     """
-#     # Create the header (correlation ID)
-#     header = correlation_id.to_bytes(4, byteorder="big")
-
-#     # Default response error code (valid for API versions 0-4)
-#     valid_api_versions = [0, 1, 2, 3, 4]
-#     error_code = 0 if api_version in valid_api_versions else 35
-
-#     # Supported API keys and their version ranges
-#     supported_api_keys = {
-#         18: (0, 4),  # APIVersions
-#         75: (0, 0),  # DescribeTopicPartitions
-#     }
-
-#     # Validate the provided API key
-#     if api_key not in supported_api_keys:
-#         raise ValueError(f"Unsupported API key: {api_key}")
-
-#     # Retrieve version details for the given API key
-#     min_version, max_version = supported_api_keys[api_key]
-
-#     # Construct the payload
-#     payload = error_code.to_bytes(2, byteorder="big")  # Error code
-#     payload += (1).to_bytes(1, byteorder="big")  # Number of API keys (always 1 in this case)
-#     payload += api_key.to_bytes(2, byteorder="big")  # API Key
-#     payload += min_version.to_bytes(2, byteorder="big")  # MinVersion
-#     payload += max_version.to_bytes(2, byteorder="big")  # MaxVersion
-
-#     # Combine header and payload
-#     response = header + payload
-
-#     # Prepend the response length
-#     response_length = len(response)
-#     full_response = response_length.to_bytes(4, byteorder="big") + response
-#     return full_response
-
-
-
-
-# def construct_response(correlation_id, api_key, api_version):
-#     """
-#     Constructs a Kafka response message based on the request details.
-#     Adds logic for APIVersions (API key 18) and DescribeTopicPartitions (API key 75).
-#     """
-#     # Create the header (correlation ID)
-#     header = correlation_id.to_bytes(4, byteorder="big")
-    
-#     # Default response error code (valid for API versions 0-4)
-#     valid_api_versions = [0, 1, 2, 3, 4]
-#     error_code = 0 if api_version in valid_api_versions else 35
-#     payload = error_code.to_bytes(2, byteorder="big")  # Error code
-#     api_keys = [18, 75]  # Both API keys will be included
-#     payload += len(api_keys).to_bytes(1, byteorder="big")  # Number of API keys (2)
-    
-#     # API Key 18 (APIVersions)
-#     payload += api_keys[0].to_bytes(2, byteorder="big")  # API Key 18
-#     payload += int(0).to_bytes(2, byteorder="big")  # MinVersion
-#     payload += int(4).to_bytes(2, byteorder="big")  # MaxVersion
-    
-#     # API Key 75 (DescribeTopicPartitions)
-#     payload += api_keys[1].to_bytes(2, byteorder="big")  # API Key 75
-#     payload += int(0).to_bytes(2, byteorder="big")  # MinVersion
-#     payload += int(0).to_bytes(2, byteorder="big")  # MaxVersion
-    
-#     # Combine header and payload
-#     response_length = len(header + payload)
-#     response = response_length.to_bytes(4, byteorder="big") + header + payload
-#     return response
-
-
-     
-    
-   # Construct the payload based on api_key
-    # if api_key == 18:  # APIVersions
-    #     # Construct the APIVersionsResponse
-    #     payload = error_code.to_bytes(2, byteorder="big")  # Error code
-    #     payload += len([18, 75]).to_bytes(1, byteorder="big")  # Number of API keys
-    #     api_key_18 = 18
-    #     payload += api_key_18.to_bytes(2, byteorder="big")  # API Key 18
-    #     payload += int(0).to_bytes(2, byteorder="big")  # MinVersion
-    #     payload += int(4).to_bytes(2, byteorder="big")  # MaxVersion
-    #     payload += int(75).to_bytes(2, byteorder="big")  # API Key 75 (DescribeTopicPartitions)
-    #     payload += int(0).to_bytes(2, byteorder="big")  # MinVersion
-    #     payload += int(0).to_bytes(2, byteorder="big")  # MaxVersion
-    # elif api_key == 75:  # DescribeTopicPartitions
-    #     # Construct a DescribeTopicPartitions response
-    #     payload = error_code.to_bytes(2, byteorder="big")  # Error code
-    #     payload += int(0).to_bytes(2, byteorder="big")  # Placeholder response for DescribeTopicPartitions
-        
-    # else:
-    #     # Default error code if the API key is unknown
-    #     payload = error_code.to_bytes(2, byteorder="big")  # Error code
-    #     payload += int(0).to_bytes(2, byteorder="big")  # Placeholder version
-    #     payload += int(4).to_bytes(2, byteorder="big")  # Placeholder flags
-    
-    # # Combine header and payload
-    # response_length = len(header + payload)
-    # response = response_length.to_bytes(4, byteorder="big") + header + payload
-    # return response
-
-    
-
 def handle_client(client, addr):
     """
     Handles a single client connection, processing one or more requests.
@@ -452,40 +473,54 @@ def handle_client(client, addr):
     print(f"Handling client from {addr}")
     try:
         while True:
-            request = client.recv(1024)
-            if not request:
+            # Read the message length (first 4 bytes)
+            length_bytes = client.recv(4)
+            if not length_bytes:
                 break  # Client disconnected
-            
+
+            # Extract message length and read the entire message
+            msg_length = int.from_bytes(length_bytes, byteorder="big")
+            request = client.recv(msg_length)
+
             # Parse the request
             api_key, api_version, correlation_id = parse_message(request)
-            
+
+            # Debugging: Show parsed values
+            print(
+                f"Received request - apiKey: {api_key}, apiVersion: {api_version}, correlationId: {correlation_id}"
+            )
+
             # Construct the response
-            response = construct_response(correlation_id, api_key, api_version)
-            
+            response = construct_response(correlation_id, api_version)
+
             # Send the response to the client
             client.sendall(response)
     except ConnectionResetError:
         print(f"Connection with {addr} reset by client.")
+    except Exception as e:
+        print(f"Error while handling client {addr}: {e}")
     finally:
         client.close()
         print(f"Connection with {addr} closed.")
+
 
 def start_server(host="localhost", port=9092):
     """
     Starts the Kafka-like server on the specified host and port.
     """
-    print("Starting server...")
+    print(f"Starting server on {host}:{port}...")
     server = socket.create_server((host, port), reuse_port=True)
     server.listen()  # Enable listening for incoming connections
-    
+
     while True:
         # Accept a client connection
         client, addr = server.accept()
         print(f"Client connected from {addr}")
-        
+
         # Handle the client's requests in a new thread
         thread = threading.Thread(target=handle_client, args=(client, addr), daemon=True)
         thread.start()
+
 
 def main():
     """
@@ -493,7 +528,6 @@ def main():
     """
     start_server()
 
+
 if __name__ == "__main__":
     main()
-
-
