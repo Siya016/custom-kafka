@@ -579,7 +579,8 @@ def construct_response(correlation_id, api_key, api_version):
     payload += error_code.to_bytes(2, byteorder="big")
 
     # Add number of API keys (4 bytes)
-    payload += len(api_entries).to_bytes(4, byteorder="big")
+    
+    num_api_keys = len(api_entries)
     payload += num_api_keys.to_bytes(4, byteorder="big")
 
     # Add each API key entry
