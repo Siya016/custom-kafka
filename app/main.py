@@ -142,7 +142,7 @@ def construct_response(correlation_id, api_key, api_version):
     error_code = 0
 
     # Throttle time in milliseconds
-    throttle_time_ms =256
+    throttle_time_ms = 256
 
     # Define API keys and their versions
     api_entries = [
@@ -158,15 +158,6 @@ def construct_response(correlation_id, api_key, api_version):
         },
     ]
 
-    # Filter the API entry that matches the api_key
-    matched_entry = next((entry for entry in api_entries if entry["api_key"] == api_key), None)
-
-    if matched_entry is None:
-        # If no matching API key is found, return an error response or handle accordingly
-        print(f"No matching API entry found for apiKey {api_key}")
-        error_code = 1  # Set an error code for unknown apiKey
-        matched_entry = {"api_key": api_key, "min_version": 0, "max_version": 0}
-
     # Construct the response payload
     payload = bytearray()
 
@@ -174,17 +165,20 @@ def construct_response(correlation_id, api_key, api_version):
     payload += error_code.to_bytes(2, byteorder="big")
 
     # Add number of API keys (4 bytes)
-    num_api_keys = len(api_entries)  # Only one API key entry is returned (either matched or default)
+    num_api_keys = len(api_entries)
     payload += num_api_keys.to_bytes(4, byteorder="big")
 
-    # Add the matching API key entry
-    payload += matched_entry["api_key"].to_bytes(2, byteorder="big")  # API key
-    payload += matched_entry["min_version"].to_bytes(2, byteorder="big")  # MinVersion
-    payload += matched_entry["max_version"].to_bytes(2, byteorder="big")  # MaxVersion
+    # Add all API key entries
+    for entry in api_entries:
+        payload += entry["api_key"].to_bytes(2, byteorder="big")  # API key
+        payload += entry["min_version"].to_bytes(2, byteorder="big")  # MinVersion
+        payload += entry["max_version"].to_bytes(2, byteorder="big")  # MaxVersion
 
     # Add throttle time (4 bytes)
     payload += throttle_time_ms.to_bytes(4, byteorder="big")
 
+    # Add tagged fields for API version 4
+    # Number of tagged fields (0 in this case)
     payload += (0).to_bytes(4, byteorder="big")
 
     # The length of the entire response (header + payload)
