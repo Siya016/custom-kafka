@@ -549,37 +549,45 @@ def construct_response(correlation_id, api_key, api_version):
     """
     Constructs a Kafka response message based on the request details.
     """
-    # Header: Correlation ID (4 bytes)
+    # Create the header (correlation ID)
     header = correlation_id.to_bytes(4, byteorder="big")
 
-    # Valid API key details
+    # Error code: 0 for no error
+    error_code = 0
+
+    # Throttle time in ms (0 for simplicity)
+    throttle_time_ms = 0
+
+    # Define API versions
     api_entries = [
-        (18, 0, 4),  # APIVersions: MinVersion=0, MaxVersion=4
-        (75, 0, 0),  # DescribeTopicPartitions: MinVersion=0, MaxVersion=0
+        {
+            "api_key": 18,  # ApiVersions
+            "min_version": 0,
+            "max_version": 4,
+        },
+        {
+            "api_key": 75,  # DescribeTopicPartitions
+            "min_version": 0,
+            "max_version": 0,
+        },
     ]
 
-    # Body: Error code (2 bytes)
-    error_code = 0
-    payload = error_code.to_bytes(2, byteorder="big")
+    # Construct the response payload
+    payload = error_code.to_bytes(2, byteorder="big")  # Error code
+    payload += len(api_entries).to_bytes(4, byteorder="big")  # Number of API keys
 
-    # Number of API keys (4 bytes)
-    num_api_keys = len(api_entries)
-    payload += num_api_keys.to_bytes(4, byteorder="big")
+    for entry in api_entries:
+        payload += entry["api_key"].to_bytes(2, byteorder="big")  # API key
+        payload += entry["min_version"].to_bytes(2, byteorder="big")  # MinVersion
+        payload += entry["max_version"].to_bytes(2, byteorder="big")  # MaxVersion
 
-    # API key entries
-    for api_entry in api_entries:
-        api_key, min_version, max_version = api_entry
-        payload += api_key.to_bytes(2, byteorder="big")
-        payload += min_version.to_bytes(2, byteorder="big")
-        payload += max_version.to_bytes(2, byteorder="big")
-
-    # Tagged fields (1 byte indicating no additional fields)
-    payload += b"\x00"
+    payload += throttle_time_ms.to_bytes(4, byteorder="big")  # Throttle time
 
     # Combine header and payload
     response_length = len(header + payload)
     response = response_length.to_bytes(4, byteorder="big") + header + payload
     return response
+
 
 def handle_client(client, addr):
     """
