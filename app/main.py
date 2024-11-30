@@ -549,16 +549,16 @@ def construct_response(correlation_id, api_key, api_version):
     """
     Constructs a Kafka response message based on the request details.
     """
-    # Create the header (correlation ID)
+    # Create the header (correlation ID) - 4 bytes for the correlation_id
     header = correlation_id.to_bytes(4, byteorder="big")
 
-    # Error code: 0 for no error
+    # Error code: 0 indicates no error
     error_code = 0
 
-    # Throttle time in ms (0 for simplicity)
+    # Throttle time in milliseconds
     throttle_time_ms = 0
 
-    # Define API versions
+    # Define API keys and their versions
     api_entries = [
         {
             "api_key": 18,  # ApiVersions
@@ -573,19 +573,28 @@ def construct_response(correlation_id, api_key, api_version):
     ]
 
     # Construct the response payload
-    payload = error_code.to_bytes(2, byteorder="big")  # Error code
-    payload += len(api_entries).to_bytes(4, byteorder="big")  # Number of API keys
+    payload = bytearray()
 
+    # Add the error code (2 bytes)
+    payload += error_code.to_bytes(2, byteorder="big")
+
+    # Add number of API keys (4 bytes)
+    payload += len(api_entries).to_bytes(4, byteorder="big")
+
+    # Add each API key entry
     for entry in api_entries:
+        # API key (2 bytes), min_version (2 bytes), max_version (2 bytes)
         payload += entry["api_key"].to_bytes(2, byteorder="big")  # API key
         payload += entry["min_version"].to_bytes(2, byteorder="big")  # MinVersion
         payload += entry["max_version"].to_bytes(2, byteorder="big")  # MaxVersion
 
-    payload += throttle_time_ms.to_bytes(4, byteorder="big")  # Throttle time
+    # Add throttle time (4 bytes)
+    payload += throttle_time_ms.to_bytes(4, byteorder="big")
 
-    # Combine header and payload
-    response_length = len(header + payload)
+    # The length of the entire response (header + payload)
+    response_length = 4 + len(payload)  # 4 bytes for header
     response = response_length.to_bytes(4, byteorder="big") + header + payload
+
     return response
 
 
