@@ -134,13 +134,8 @@ def parse_message(msg):
 def construct_response(correlation_id, api_key, api_version):
     """
     Constructs a Kafka response message based on the request details.
+    Specifically tailored for API Versions v4 response.
     """
-    # Create the header (correlation ID) - 4 bytes for the correlation_id
-    header = correlation_id.to_bytes(4, byteorder="big")
-
-    # Error code: 0 indicates no error
-    error_code = 0
-
     # Throttle time in milliseconds
     throttle_time_ms = 256
 
@@ -161,29 +156,33 @@ def construct_response(correlation_id, api_key, api_version):
     # Construct the response payload
     payload = bytearray()
 
-    # Add the error code (2 bytes)
-    payload += error_code.to_bytes(2, byteorder="big")
+    # Error code (2 bytes) - 0 means no error
+    payload += (0).to_bytes(2, byteorder="big")
 
-    # Add number of API keys (4 bytes)
-    num_api_keys = len(api_entries)
-    payload += num_api_keys.to_bytes(4, byteorder="big")
+    # Number of API keys (4 bytes)
+    payload += len(api_entries).to_bytes(4, byteorder="big")
 
-    # Add all API key entries
+    # Add API key entries
     for entry in api_entries:
         payload += entry["api_key"].to_bytes(2, byteorder="big")  # API key
         payload += entry["min_version"].to_bytes(2, byteorder="big")  # MinVersion
         payload += entry["max_version"].to_bytes(2, byteorder="big")  # MaxVersion
 
-    # Add throttle time (4 bytes)
+    # Throttle time (4 bytes)
     payload += throttle_time_ms.to_bytes(4, byteorder="big")
 
-    # Add tagged fields for API version 4
-    # Number of tagged fields (0 in this case)
-    payload += (0).to_bytes(4, byteorder="big")
+    # For API Versions v4, add tagged fields
+    # Number of tagged fields (varint encoding 0)
+    payload += (0).to_bytes(1, byteorder="big")
 
-    # The length of the entire response (header + payload)
+    # Construct full response
+    header = correlation_id.to_bytes(4, byteorder="big")
     response_length = 4 + len(payload)  # 4 bytes for header
-    response = response_length.to_bytes(4, byteorder="big") + header + payload
+    response = (
+        response_length.to_bytes(4, byteorder="big") +  # Total message length 
+        header +  # Correlation ID 
+        payload  # Response payload
+    )
 
     return response
 
