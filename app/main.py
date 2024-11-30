@@ -174,7 +174,7 @@ def construct_response(correlation_id, api_key, api_version):
     payload += error_code.to_bytes(2, byteorder="big")
 
     # Add number of API keys (4 bytes)
-    num_api_keys = 2  # Only one API key entry is returned (either matched or default)
+    num_api_keys = len(api_entries)  # Only one API key entry is returned (either matched or default)
     payload += num_api_keys.to_bytes(4, byteorder="big")
 
     # Add the matching API key entry
@@ -184,6 +184,8 @@ def construct_response(correlation_id, api_key, api_version):
 
     # Add throttle time (4 bytes)
     payload += throttle_time_ms.to_bytes(4, byteorder="big")
+
+    payload += (0).to_bytes(4, byteorder="big")
 
     # The length of the entire response (header + payload)
     response_length = 4 + len(payload)  # 4 bytes for header
