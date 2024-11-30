@@ -555,9 +555,20 @@ def parse_message(msg):
 def construct_response(correlation_id, api_version):
     """
     Constructs a Kafka ApiVersionsResponse (version 4).
+    
+    Parameters:
+    - correlation_id (int): The correlation ID from the request.
+    - api_version (int): The API version of the request.
+
+    Returns:
+    - bytes: The constructed ApiVersionsResponse.
     """
-    # Correlation ID (4 bytes)
+    # Create the header (correlation ID)
     header = correlation_id.to_bytes(4, byteorder="big")
+
+    # Default response error code (valid for API versions 0-4)
+    valid_api_versions = [0, 1, 2, 3, 4]
+    error_code = 0 if api_version in valid_api_versions else 35
 
     # Define supported API keys and their version ranges
     supported_api_keys = {
@@ -565,31 +576,26 @@ def construct_response(correlation_id, api_version):
         75: (0, 0),  # DescribeTopicPartitions: MinVersion = 0, MaxVersion = 0
     }
 
-    # Error code (2 bytes)
-    error_code = 0 if api_version <= 4 else 35  # Unsupported Version if > 4
+    # Construct the payload fields
+    throttle_time_ms = (0).to_bytes(4, byteorder="big")  # No throttling
     error_code_bytes = error_code.to_bytes(2, byteorder="big")
-
-    # ThrottleTimeMs (4 bytes) - set to 0 (no throttling)
-    throttle_time_ms = (0).to_bytes(4, byteorder="big")
-
-    # Number of API keys (4 bytes)
     num_api_keys = len(supported_api_keys)
     num_api_keys_bytes = num_api_keys.to_bytes(4, byteorder="big")
 
-    # API keys section
+    # Build API keys section
     api_keys_payload = b""
     for api_key, (min_version, max_version) in supported_api_keys.items():
-        api_keys_payload += api_key.to_bytes(2, byteorder="big")  # ApiKey
-        api_keys_payload += min_version.to_bytes(2, byteorder="big")  # MinVersion
-        api_keys_payload += max_version.to_bytes(2, byteorder="big")  # MaxVersion
+        api_keys_payload += api_key.to_bytes(2, byteorder="big")  # API Key
+        api_keys_payload += min_version.to_bytes(2, byteorder="big")  # Min Version
+        api_keys_payload += max_version.to_bytes(2, byteorder="big")  # Max Version
 
-    # Tagged fields (empty, 1 byte indicating length of 0)
-    tagged_fields = b"\x00"
+    # Tagged fields (1 byte, empty)
+    tagged_fields = (0).to_bytes(1, byteorder="big")
 
     # Combine all parts of the response body
     response_body = (
-        error_code_bytes
-        + throttle_time_ms
+        throttle_time_ms
+        + error_code_bytes
         + num_api_keys_bytes
         + api_keys_payload
         + tagged_fields
@@ -603,6 +609,7 @@ def construct_response(correlation_id, api_version):
     full_response = response_length.to_bytes(4, byteorder="big") + response
 
     return full_response
+
 
 
 def handle_client(client, addr):
