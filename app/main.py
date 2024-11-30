@@ -172,8 +172,8 @@ def construct_response(correlation_id, api_key, api_version):
     payload += throttle_time_ms.to_bytes(4, byteorder="big")
 
     # For API Versions v4, add tagged fields
-    # Number of tagged fields (varint encoding 0)
-    payload += (0).to_bytes(1, byteorder="big")
+    # Number of tagged fields (4-byte integer)
+    payload += (0).to_bytes(4, byteorder="big")
 
     # Construct full response
     header = correlation_id.to_bytes(4, byteorder="big")
@@ -185,6 +185,7 @@ def construct_response(correlation_id, api_key, api_version):
     )
 
     return response
+
 
 def handle_client(client, addr):
     """
