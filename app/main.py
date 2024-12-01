@@ -170,18 +170,20 @@ def construct_response(correlation_id, api_key, api_version):
         # Construct the APIVersionsResponse with multiple API keys
         payload = error_code.to_bytes(2, byteorder="big")  # Error code
         
-        # Include two API keys instead of one
-        payload += len([18, 75]).to_bytes(1, byteorder="big")  # Number of API keys
-
-        # First API Key (APIVersions)
-        payload += int(18).to_bytes(2, byteorder="big")  # API Key 18
-        payload += int(0).to_bytes(2, byteorder="big")  # MinVersion
-        payload += int(4).to_bytes(2, byteorder="big")  # MaxVersion
-
-        # Second API Key (DescribeTopicPartitions)
-        payload += int(75).to_bytes(2, byteorder="big")  # API Key 75
-        payload += int(0).to_bytes(2, byteorder="big")  # MinVersion
-        payload += int(0).to_bytes(2, byteorder="big")  # MaxVersion
+        # Explicitly define the API keys we want to include
+        api_keys = [
+            {"key": 18, "min_version": 0, "max_version": 4},
+            {"key": 75, "min_version": 0, "max_version": 0}
+        ]
+        
+        # Number of API keys
+        payload += len(api_keys).to_bytes(1, byteorder="big")
+        
+        # Add each API key's details
+        for api_info in api_keys:
+            payload += api_info["key"].to_bytes(2, byteorder="big")  # API Key
+            payload += api_info["min_version"].to_bytes(2, byteorder="big")  # MinVersion
+            payload += api_info["max_version"].to_bytes(2, byteorder="big")  # MaxVersion
 
     elif api_key == 75:  # DescribeTopicPartitions
         # Construct a DescribeTopicPartitions response
@@ -197,7 +199,6 @@ def construct_response(correlation_id, api_key, api_version):
     response_length = len(header + payload)
     response = response_length.to_bytes(4, byteorder="big") + header + payload
     return response
-    
 
 
 def handle_client(client, addr):
