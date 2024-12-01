@@ -134,14 +134,10 @@ def parse_message(msg):
 def construct_response(correlation_id, api_key, api_version):
     """
     Constructs a Kafka response message for ApiVersionsResponse.
-    Dynamically handles the specified API key.
+    Dynamically handles the specified API key and version.
     """
     # Create the header (correlation ID)
     header = correlation_id.to_bytes(4, byteorder="big")
-
-    # Default response error code (valid for API versions 0-4)
-    valid_api_versions = [0, 1, 2, 3, 4]
-    error_code = 0 if api_version in valid_api_versions else 35
 
     # Supported API keys and their version ranges
     supported_api_keys = {
@@ -156,12 +152,25 @@ def construct_response(correlation_id, api_key, api_version):
     # Retrieve version details for the given API key
     min_version, max_version = supported_api_keys[api_key]
 
-    # Construct the payload
-    payload = error_code.to_bytes(2, byteorder="big")  # Error code
-    payload += (2).to_bytes(1, byteorder="big")  # Number of API keys (always 1 in this case)
-    payload += api_key.to_bytes(2, byteorder="big")  # API Key
-    payload += min_version.to_bytes(2, byteorder="big")  # MinVersion
-    payload += max_version.to_bytes(2, byteorder="big")  # MaxVersion
+    # Default response error code 
+    error_code = 0
+
+    # Construct the payload based on API version
+    if api_version >= 3:
+        # For v3 and v4, include tagged fields
+        payload = error_code.to_bytes(2, byteorder="big")  # Error code
+        payload += (2).to_bytes(4, byteorder="big")  # Number of API keys (varint for v3+)
+        payload += api_key.to_bytes(2, byteorder="big")  # API Key
+        payload += min_version.to_bytes(2, byteorder="big")  # MinVersion
+        payload += max_version.to_bytes(2, byteorder="big")  # MaxVersion
+        payload += b'\x00'  # Empty tagged fields
+    else:
+        # For v0-v2
+        payload = error_code.to_bytes(2, byteorder="big")  # Error code
+        payload += (2).to_bytes(1, byteorder="big")  # Number of API keys
+        payload += api_key.to_bytes(2, byteorder="big")  # API Key
+        payload += min_version.to_bytes(2, byteorder="big")  # MinVersion
+        payload += max_version.to_bytes(2, byteorder="big")  # MaxVersion
 
     # Combine header and payload
     response = header + payload
@@ -170,7 +179,7 @@ def construct_response(correlation_id, api_key, api_version):
     response_length = len(response)
     full_response = response_length.to_bytes(4, byteorder="big") + response
     return full_response
-
+    
 def handle_client(client, addr):
     """
     Handles a single client connection, processing one or more requests.
