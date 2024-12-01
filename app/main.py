@@ -136,63 +136,65 @@ def construct_response(correlation_id, api_key, api_version):
     Constructs a Kafka response message for ApiVersionsResponse.
     Dynamically handles the specified API key and version.
     """
-    # Create the header (correlation ID)
-    header = correlation_id.to_bytes(4, byteorder="big")
-
     # Supported API keys and their version ranges
     supported_api_keys = {
-        18: (0, 4),  # APIVersions
-        75: (0, 0),  # DescribeTopicPartitions
+        18: (0, 4),    # APIVersions
+        75: (0, 0)     # DescribeTopicPartitions
     }
 
-    # Validate the provided API key
-    if api_key not in supported_api_keys:
-        raise ValueError(f"Unsupported API key: {api_key}")
-
-    # Retrieve version details for the given API key
-    min_version, max_version = supported_api_keys[api_key]
-
-    # Default response parameters
-    error_code = 0
-    throttle_time_ms = 0  # Added for v3+ responses
-
-    # Construct the payload based on API version
+    # Prepare the payload for API versions response
     if api_version >= 3:
         # For v3 and v4
-        payload = error_code.to_bytes(2, byteorder="big")  # Error code
-        payload += throttle_time_ms.to_bytes(4, byteorder="big")  # Throttle time
+        payload = b''
+        # Error code (2 bytes)
+        payload += (0).to_bytes(2, byteorder='big')
+        # Throttle time (4 bytes)
+        payload += (0).to_bytes(4, byteorder='big')
         
-        # Number of API keys (use 2 as the example shows)
-        payload += (2).to_bytes(4, byteorder="big")  # Varint for num_api_keys
+        # Number of API keys (4-byte varint) - we'll have 2 keys
+        payload += (2).to_bytes(4, byteorder='big')
         
-        # First API key entry
-        payload += api_key.to_bytes(2, byteorder="big")  # API Key
-        payload += min_version.to_bytes(2, byteorder="big")  # MinVersion
-        payload += max_version.to_bytes(2, byteorder="big")  # MaxVersion
+        # First API key: APIVersions (18)
+        payload += (18).to_bytes(2, byteorder='big')  # API Key
+        payload += (0).to_bytes(2, byteorder='big')   # MinVersion
+        payload += (4).to_bytes(2, byteorder='big')   # MaxVersion
         
-        # Add another API key entry (the decoder expects multiple)
-        payload += (0).to_bytes(2, byteorder="big")  # Another API Key
-        payload += (0).to_bytes(2, byteorder="big")  # MinVersion
-        payload += (0).to_bytes(2, byteorder="big")  # MaxVersion
+        # Second API key: DescribeTopicPartitions (75)
+        payload += (75).to_bytes(2, byteorder='big')  # API Key
+        payload += (0).to_bytes(2, byteorder='big')   # MinVersion
+        payload += (0).to_bytes(2, byteorder='big')   # MaxVersion
         
-        # Tagged fields (empty for now)
-        payload += b'\x00'
+        # Tagged fields
+        payload += (0).to_bytes(1, byteorder='big')
     else:
         # For v0-v2
-        payload = error_code.to_bytes(2, byteorder="big")  # Error code
-        payload += (2).to_bytes(1, byteorder="big")  # Number of API keys
-        payload += api_key.to_bytes(2, byteorder="big")  # API Key
-        payload += min_version.to_bytes(2, byteorder="big")  # MinVersion
-        payload += max_version.to_bytes(2, byteorder="big")  # MaxVersion
+        payload = b''
+        # Error code (2 bytes)
+        payload += (0).to_bytes(2, byteorder='big')
+        # Number of API keys (1 byte)
+        payload += (2).to_bytes(1, byteorder='big')
+        
+        # First API key: APIVersions (18)
+        payload += (18).to_bytes(2, byteorder='big')  # API Key
+        payload += (0).to_bytes(2, byteorder='big')   # MinVersion
+        payload += (4).to_bytes(2, byteorder='big')   # MaxVersion
+        
+        # Second API key: DescribeTopicPartitions (75)
+        payload += (75).to_bytes(2, byteorder='big')  # API Key
+        payload += (0).to_bytes(2, byteorder='big')   # MinVersion
+        payload += (0).to_bytes(2, byteorder='big')   # MaxVersion
+
+    # Create header with correlation ID
+    header = correlation_id.to_bytes(4, byteorder='big')
 
     # Combine header and payload
     response = header + payload
 
     # Prepend the response length
     response_length = len(response)
-    full_response = response_length.to_bytes(4, byteorder="big") + response
+    full_response = response_length.to_bytes(4, byteorder='big') + response
     return full_response
-    
+
 def handle_client(client, addr):
     """
     Handles a single client connection, processing one or more requests.
