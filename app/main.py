@@ -132,68 +132,37 @@ def parse_message(msg):
     return api_key, api_version, correlation_id
 
 def construct_response(correlation_id, api_key, api_version):
-    """
-    Constructs a Kafka response message for ApiVersionsResponse.
-    Dynamically handles the specified API key and version.
-    """
-    # Supported API keys and their version ranges
-    supported_api_keys = {
-        18: (0, 4),    # APIVersions
-        75: (0, 0)     # DescribeTopicPartitions
-    }
-
-    # Prepare the payload for API versions response
-    if api_version >= 3:
-        # For v3 and v4
-        payload = b''
-        # Error code (2 bytes)
-        payload += (0).to_bytes(2, byteorder='big')
-        # Throttle time (4 bytes)
-        payload += (0).to_bytes(4, byteorder='big')
+    header = correlation_id.to_bytes(4, byteorder="big")
+    error_code = 0  # Error code: 0 indicates no error
+    if api_key == 18:  # APIVersions
+        # Construct the APIVersionsResponse
+        payload = error_code.to_bytes(2, byteorder="big")  # Error code
+        payload += len([18, 75]).to_bytes(1, byteorder="big")  # Number of API keys
+        api_key_18 = 18
+        payload += api_key_18.to_bytes(2, byteorder="big")  # API Key 18
+        payload += int(0).to_bytes(2, byteorder="big")  # MinVersion
+        payload += int(4).to_bytes(2, byteorder="big")  # MaxVersion
+        payload += int(75).to_bytes(2, byteorder="big")  # API Key 75 (DescribeTopicPartitions)
+        payload += int(0).to_bytes(2, byteorder="big")  # MinVersion
+        payload += int(0).to_bytes(2, byteorder="big")  # MaxVersion
+    elif api_key == 75:  # DescribeTopicPartitions
+        # Construct a DescribeTopicPartitions response
+        payload = error_code.to_bytes(2, byteorder="big")  # Error code
+        payload += int(0).to_bytes(2, byteorder="big")  # Placeholder response for DescribeTopicPartitions
         
-        # Number of API keys (4-byte varint) - we'll have 2 keys
-        payload += (2).to_bytes(4, byteorder='big')
-        
-        # First API key: APIVersions (18)
-        payload += (18).to_bytes(2, byteorder='big')  # API Key
-        payload += (0).to_bytes(2, byteorder='big')   # MinVersion
-        payload += (4).to_bytes(2, byteorder='big')   # MaxVersion
-        
-        # Second API key: DescribeTopicPartitions (75)
-        payload += (75).to_bytes(2, byteorder='big')  # API Key
-        payload += (0).to_bytes(2, byteorder='big')   # MinVersion
-        payload += (0).to_bytes(2, byteorder='big')   # MaxVersion
-        
-        # Tagged fields
-        payload += (0).to_bytes(1, byteorder='big')
     else:
-        # For v0-v2
-        payload = b''
-        # Error code (2 bytes)
-        payload += (0).to_bytes(2, byteorder='big')
-        # Number of API keys (1 byte)
-        payload += (2).to_bytes(1, byteorder='big')
-        
-        # First API key: APIVersions (18)
-        payload += (18).to_bytes(2, byteorder='big')  # API Key
-        payload += (0).to_bytes(2, byteorder='big')   # MinVersion
-        payload += (4).to_bytes(2, byteorder='big')   # MaxVersion
-        
-        # Second API key: DescribeTopicPartitions (75)
-        payload += (75).to_bytes(2, byteorder='big')  # API Key
-        payload += (0).to_bytes(2, byteorder='big')   # MinVersion
-        payload += (0).to_bytes(2, byteorder='big')   # MaxVersion
-
-    # Create header with correlation ID
-    header = correlation_id.to_bytes(4, byteorder='big')
-
+        # Default error code if the API key is unknown
+        payload = error_code.to_bytes(2, byteorder="big")  # Error code
+        payload += int(0).to_bytes(2, byteorder="big")  # Placeholder version
+        payload += int(4).to_bytes(2, byteorder="big")  # Placeholder flags
+    
     # Combine header and payload
-    response = header + payload
+    response_length = len(header + payload)
+    response = response_length.to_bytes(4, byteorder="big") + header + payload
+    return response
 
-    # Prepend the response length
-    response_length = len(response)
-    full_response = response_length.to_bytes(4, byteorder='big') + response
-    return full_response
+    
+
 
 def handle_client(client, addr):
     """
