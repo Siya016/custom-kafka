@@ -248,7 +248,7 @@ def construct_response(correlation_id, api_key, api_version):
     header = correlation_id.to_bytes(4, byteorder="big")
     error_code = 0  # Error code: 0 indicates no error
 
-    logging.debug(f"Received request: api_key={api_key}, api_version={api_version}")
+    print(f"Received request: api_key={api_key}, api_version={api_version}")
 
     if api_key == 18:  # ApiVersions
         # Construct the ApiVersionsResponse with multiple API keys
@@ -266,7 +266,7 @@ def construct_response(correlation_id, api_key, api_version):
             payload += api_info["min_version"].to_bytes(2, byteorder="big")
             payload += api_info["max_version"].to_bytes(2, byteorder="big")
 
-            logging.debug(f"API Key: {api_info['key']}, Min Version: {api_info['min_version']}, Max Version: {api_info['max_version']}")
+            print(f"API Key: {api_info['key']}, Min Version: {api_info['min_version']}, Max Version: {api_info['max_version']}")
 
     elif api_key == 75:  # DescribeTopicPartitions
         # Construct a DescribeTopicPartitions response
