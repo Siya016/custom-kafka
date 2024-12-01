@@ -221,7 +221,7 @@ def construct_response(correlation_id, api_key, api_version):
 
         print(f"Sending ApiVersions response with {len(api_keys)} keys")
 
-        payload += len(api_keys).to_bytes(1, byteorder="big")
+        payload += int(2).to_bytes(1, byteorder="big")
 
         for api_info in api_keys:
             payload += api_info["key"].to_bytes(2, byteorder="big")
