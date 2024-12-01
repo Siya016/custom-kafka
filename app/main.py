@@ -177,7 +177,7 @@ def construct_response(correlation_id, api_key, api_version):
         ]
         
         # Number of API keys
-        payload += int(2).to_bytes(1, byteorder="big")
+        payload += len(api_keys).to_bytes(1, byteorder="big")
         
         # Add each API key's details
         for api_info in api_keys:
