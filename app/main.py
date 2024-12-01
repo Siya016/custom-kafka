@@ -231,112 +231,83 @@
 #     main()
 
 
+# 
+
+
 import socket
 import logging
-import threading
 
-def parse_message(msg):
-    """
-    Parses a Kafka request message and extracts apiKey, apiVersion, and correlationId.
-    """
-    api_key = int.from_bytes(msg[4:6], byteorder="big")
-    api_version = int.from_bytes(msg[6:8], byteorder="big")
-    correlation_id = int.from_bytes(msg[8:12], byteorder="big")
+def parse_request(data):
+    """Parses the Kafka request message and extracts relevant information."""
+    api_key = int.from_bytes(data[4:6], byteorder='big')
+    api_version = int.from_bytes(data[6:8], byteorder='big')
+    correlation_id = int.from_bytes(data[8:12], byteorder='big')
     return api_key, api_version, correlation_id
 
 def construct_response(correlation_id, api_key, api_version):
-    header = correlation_id.to_bytes(4, byteorder="big")
-    error_code = 0  # Error code: 0 indicates no error
+    """Constructs the response based on the API key and version."""
 
-    print(f"Received request: api_key={api_key}, api_version={api_version}")
+    header = correlation_id.to_bytes(4, byteorder='big')
+    error_code = 0
 
-    if api_key == 18 or api_key == 75:  # ApiVersions
-        # Construct the ApiVersionsResponse with multiple API keys
-        payload = error_code.to_bytes(2, byteorder="big")  # Error code
-
+    if api_key == 18:  # ApiVersions
+        payload = error_code.to_bytes(2, byteorder='big')
         api_keys = [
-            {"key": 18, "min_version": 0, "max_version": 4},
-            {"key": 75, "min_version": 0, "max_version": 0}
+            (18, 0, 4),
+            (75, 0, 0)
         ]
-
-        payload += len(api_keys).to_bytes(1, byteorder="big")
-
-        for api_info in api_keys:
-            payload += api_info["key"].to_bytes(2, byteorder="big")
-            payload += api_info["min_version"].to_bytes(2, byteorder="big")
-            payload += api_info["max_version"].to_bytes(2, byteorder="big")
-
-            print(f"API Key: {api_info['key']}, Min Version: {api_info['min_version']}, Max Version: {api_info['max_version']}")
-
+        payload += len(api_keys).to_bytes(1, byteorder='big')
+        for api_key, min_version, max_version in api_keys:
+            payload += api_key.to_bytes(2, byteorder='big')
+            payload += min_version.to_bytes(2, byteorder='big')
+            payload += max_version.to_bytes(2, byteorder='big')
     elif api_key == 75:  # DescribeTopicPartitions
-        # Construct a DescribeTopicPartitions response
-        # ... (Implement the logic for this API key)
-        payload = error_code.to_bytes(2, byteorder="big")  # Error code
-        payload += int(0).to_bytes(2, byteorder="big")  # Placeholder response
-        logging.debug("Sending DescribeTopicPartitions response")
-
+        # Implement the logic for DescribeTopicPartitions response
+        payload = ...
     else:
-        # Default error code if the API key is unknown
-        payload = error_code.to_bytes(2, byteorder="big")  # Error code
-        payload += int(0).to_bytes(2, byteorder="big")  # Placeholder version
-        payload += int(4).to_bytes(2, byteorder="big")  # Placeholder flags
-        logging.debug("Sending default error response")
+        # Default error response
+        payload = error_code.to_bytes(2, byteorder='big')
+        payload += int(0).to_bytes(2, byteorder='big')
+        payload += int(4).to_bytes(2, byteorder='big')
 
     response_length = len(header + payload)
-    response = response_length.to_bytes(4, byteorder="big") + header + payload
-
-    print(f"Constructed response: {response.hex()}")
-
+    response = response_length.to_bytes(4, byteorder='big') + header + payload
     return response
 
-def handle_client(client, addr):
+def handle_client(client_socket, addr):
+    """Handles client connections and processes requests."""
     print(f"Handling client from {addr}")
 
-    try:
-        while True:
-            request = client.recv(1024)
-            if not request:
-                break  # Client disconnected
-
-            try:
-                api_key, api_version, correlation_id = parse_message(request)
-                logging.debug(f"Received request: apiKey={api_key}, apiVersion={api_version}, correlationId={correlation_id}")
-
-                response = construct_response(correlation_id, api_key, api_version)
-                client.sendall(response)
-            except Exception as e:
-                logging.error(f"Error processing request from {addr}: {str(e)}")
+    while True:
+        try:
+            request_length_bytes = client_socket.recv(4)
+            if not request_length_bytes:
                 break
 
-    except ConnectionResetError:
-        print(f"Connection with {addr} reset by client.")
-    except Exception as e:
-        print(f"Error handling client {addr}: {str(e)}")
-    finally:
-        client.close()
-        print(f"Connection with {addr} closed.")
+            request_length = int.from_bytes(request_length_bytes, byteorder='big')
+            request_data = client_socket.recv(request_length)
 
-def start_server(host="localhost", port=9092):
-    print(f"Starting server on {host}:{port}...")
-    server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    server.bind((host, port))
-    server.listen()  # Enable listening for incoming connections
-    while True:
-        # Accept a client connection
-        client, addr = server.accept()
-        print(f"Client connected from {addr}")
+            api_key, api_version, correlation_id = parse_request(request_data)
+            response = construct_response(correlation_id, api_key, api_version)
+            client_socket.sendall(response)
+        except Exception as e:
+            print(f"Error handling client: {addr}, {str(e)}")
+            break
 
-        # Handle the client's requests in a new thread
-        thread = threading.Thread(
-            target=handle_client, args=(client, addr), daemon=True
-        )
-        thread.start()
+    client_socket.close()
+    print(f"Connection closed with {addr}")
 
-def main():
-    """
-    Entry point for the program.
-    """
+def start_server(host='localhost', port=9092):
+    """Starts the server and listens for incoming connections."""
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as server_socket:
+        server_socket.bind((host, port))
+        server_socket.listen()
+        print(f"Server listening on {host}:{port}")
+
+        while True:
+            client_socket, addr = server_socket.accept()
+            client_handler = threading.Thread(target=handle_client, args=(client_socket, addr), daemon=True)
+            client_handler.start()
+
+if __name__ == '__main__':
     start_server()
-
-if __name__ == "__main__":
-    main()
