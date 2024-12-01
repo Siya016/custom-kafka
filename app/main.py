@@ -228,6 +228,9 @@ def construct_response(correlation_id, api_key, api_version):
             payload += api_info["min_version"].to_bytes(2, byteorder="big")
             payload += api_info["max_version"].to_bytes(2, byteorder="big")
 
+            print(f"API Key: {api_info['key']}, Min Version: {api_info['min_version']}, Max Version: {api_info['max_version']}")
+
+
     elif api_key == 75:  # DescribeTopicPartitions
         # Construct a DescribeTopicPartitions response
         payload = error_code.to_bytes(2, byteorder="big")  # Error code
