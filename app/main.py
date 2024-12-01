@@ -285,7 +285,7 @@ def construct_response(correlation_id, api_key, api_version):
     response_length = len(header + payload)
     response = response_length.to_bytes(4, byteorder="big") + header + payload
 
-    logging.debug(f"Constructed response: {response.hex()}")
+    print(f"Constructed response: {response.hex()}")
 
     return response
 
