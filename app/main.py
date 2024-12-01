@@ -262,6 +262,7 @@ def construct_response(correlation_id, api_key, api_version):
             payload += api_key.to_bytes(2, byteorder='big')
             payload += min_version.to_bytes(2, byteorder='big')
             payload += max_version.to_bytes(2, byteorder='big')
+        payload_size = len(payload)
     elif api_key == 75:  # DescribeTopicPartitions
         # Implement the logic for DescribeTopicPartitions response
         payload = ...
@@ -271,8 +272,8 @@ def construct_response(correlation_id, api_key, api_version):
         payload += int(0).to_bytes(2, byteorder='big')
         payload += int(4).to_bytes(2, byteorder='big')
 
-    response_length = len(header + payload)
-    response = response_length.to_bytes(4, byteorder='big') + header + payload
+    response_length = payload_size.to_bytes(4, byteorder="big")
+    response = response_length + header + payload
     return response
 
 def handle_client(client_socket, addr):
