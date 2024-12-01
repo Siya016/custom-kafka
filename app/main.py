@@ -219,7 +219,7 @@ def construct_response(correlation_id, api_key, api_version):
             {"key": 75, "min_version": 0, "max_version": 0}
         ]
 
-        logging.debug(f"Sending ApiVersions response with {len(api_keys)} keys")
+        print(f"Sending ApiVersions response with {len(api_keys)} keys")
 
         payload += len(api_keys).to_bytes(1, byteorder="big")
 
