@@ -120,6 +120,7 @@
 
 
 import socket
+import logging
 import threading
 
 def parse_message(msg):
@@ -162,44 +163,87 @@ def parse_message(msg):
 #     return response
 
 
+# def construct_response(correlation_id, api_key, api_version):
+#     header = correlation_id.to_bytes(4, byteorder="big")
+#     error_code = 0  # Error code: 0 indicates no error
+
+#     if api_key == 18:  # APIVersions
+#         # Construct the APIVersionsResponse with multiple API keys
+#         payload = error_code.to_bytes(2, byteorder="big")  # Error code
+        
+#         # Explicitly define the API keys we want to include
+#         api_keys = [
+#             {"key": 18, "min_version": 0, "max_version": 4},
+#             {"key": 75, "min_version": 0, "max_version": 0}
+#         ]
+        
+#         # Number of API keys
+#         payload += len(api_keys).to_bytes(1, byteorder="big")
+        
+#         # Add each API key's details
+#         for api_info in api_keys:
+#             payload += api_info["key"].to_bytes(2, byteorder="big")  # API Key
+#             payload += api_info["min_version"].to_bytes(2, byteorder="big")  # MinVersion
+#             payload += api_info["max_version"].to_bytes(2, byteorder="big")  # MaxVersion
+
+#     elif api_key == 75:  # DescribeTopicPartitions
+#         # Construct a DescribeTopicPartitions response
+#         payload = error_code.to_bytes(2, byteorder="big")  # Error code
+#         payload += int(0).to_bytes(2, byteorder="big")  # Placeholder response
+#     else:
+#         # Default error code if the API key is unknown
+#         payload = error_code.to_bytes(2, byteorder="big")  # Error code
+#         payload += int(0).to_bytes(2, byteorder="big")  # Placeholder version
+#         payload += int(4).to_bytes(2, byteorder="big")  # Placeholder flags
+
+#     # Combine header and payload
+#     response_length = len(header + payload)
+#     response = response_length.to_bytes(4, byteorder="big") + header + payload
+#     return response
+
+
+
+
 def construct_response(correlation_id, api_key, api_version):
     header = correlation_id.to_bytes(4, byteorder="big")
     error_code = 0  # Error code: 0 indicates no error
 
-    if api_key == 18:  # APIVersions
-        # Construct the APIVersionsResponse with multiple API keys
+    logging.debug(f"Received request: api_key={api_key}, api_version={api_version}")
+
+    if api_key == 18:  # ApiVersions
+        # Construct the ApiVersionsResponse with multiple API keys
         payload = error_code.to_bytes(2, byteorder="big")  # Error code
-        
-        # Explicitly define the API keys we want to include
+
         api_keys = [
             {"key": 18, "min_version": 0, "max_version": 4},
             {"key": 75, "min_version": 0, "max_version": 0}
         ]
-        
-        # Number of API keys
+
+        logging.debug(f"Sending ApiVersions response with {len(api_keys)} keys")
+
         payload += len(api_keys).to_bytes(1, byteorder="big")
-        
-        # Add each API key's details
+
         for api_info in api_keys:
-            payload += api_info["key"].to_bytes(2, byteorder="big")  # API Key
-            payload += api_info["min_version"].to_bytes(2, byteorder="big")  # MinVersion
-            payload += api_info["max_version"].to_bytes(2, byteorder="big")  # MaxVersion
+            payload += api_info["key"].to_bytes(2, byteorder="big")
+            payload += api_info["min_version"].to_bytes(2, byteorder="big")
+            payload += api_info["max_version"].to_bytes(2, byteorder="big")
 
     elif api_key == 75:  # DescribeTopicPartitions
         # Construct a DescribeTopicPartitions response
         payload = error_code.to_bytes(2, byteorder="big")  # Error code
         payload += int(0).to_bytes(2, byteorder="big")  # Placeholder response
+        logging.debug("Sending DescribeTopicPartitions response")
+
     else:
         # Default error code if the API key is unknown
         payload = error_code.to_bytes(2, byteorder="big")  # Error code
         payload += int(0).to_bytes(2, byteorder="big")  # Placeholder version
         payload += int(4).to_bytes(2, byteorder="big")  # Placeholder flags
+        logging.debug("Sending default error response")
 
-    # Combine header and payload
     response_length = len(header + payload)
     response = response_length.to_bytes(4, byteorder="big") + header + payload
     return response
-
 
 def handle_client(client, addr):
     """
