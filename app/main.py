@@ -250,7 +250,7 @@ def construct_response(correlation_id, api_key, api_version):
 
     print(f"Received request: api_key={api_key}, api_version={api_version}")
 
-    if api_key == 18:  # ApiVersions
+    if api_key == 18 or api_key == 75:  # ApiVersions
         # Construct the ApiVersionsResponse with multiple API keys
         payload = error_code.to_bytes(2, byteorder="big")  # Error code
 
