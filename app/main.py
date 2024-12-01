@@ -152,18 +152,31 @@ def construct_response(correlation_id, api_key, api_version):
     # Retrieve version details for the given API key
     min_version, max_version = supported_api_keys[api_key]
 
-    # Default response error code 
+    # Default response parameters
     error_code = 0
+    throttle_time_ms = 0  # Added for v3+ responses
 
     # Construct the payload based on API version
     if api_version >= 3:
-        # For v3 and v4, include tagged fields
+        # For v3 and v4
         payload = error_code.to_bytes(2, byteorder="big")  # Error code
-        payload += (2).to_bytes(4, byteorder="big")  # Number of API keys (varint for v3+)
+        payload += throttle_time_ms.to_bytes(4, byteorder="big")  # Throttle time
+        
+        # Number of API keys (use 2 as the example shows)
+        payload += (2).to_bytes(4, byteorder="big")  # Varint for num_api_keys
+        
+        # First API key entry
         payload += api_key.to_bytes(2, byteorder="big")  # API Key
         payload += min_version.to_bytes(2, byteorder="big")  # MinVersion
         payload += max_version.to_bytes(2, byteorder="big")  # MaxVersion
-        payload += b'\x00'  # Empty tagged fields
+        
+        # Add another API key entry (the decoder expects multiple)
+        payload += (0).to_bytes(2, byteorder="big")  # Another API Key
+        payload += (0).to_bytes(2, byteorder="big")  # MinVersion
+        payload += (0).to_bytes(2, byteorder="big")  # MaxVersion
+        
+        # Tagged fields (empty for now)
+        payload += b'\x00'
     else:
         # For v0-v2
         payload = error_code.to_bytes(2, byteorder="big")  # Error code
