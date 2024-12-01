@@ -236,6 +236,7 @@
 
 import socket
 import logging
+import threading
 
 def parse_request(data):
     """Parses the Kafka request message and extracts relevant information."""
