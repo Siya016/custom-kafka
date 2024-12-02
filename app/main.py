@@ -219,104 +219,63 @@
 
 import socket
 import threading
+from enum import Enum
 
-def construct_response(correlation_id):
-    """
-    Constructs a properly formatted ApiVersionsResponse.
-    """
-    # Correlation ID
-    header = correlation_id.to_bytes(4, byteorder="big")
+class ApiKey(Enum):
+    FETCH = 1
+    API_VERSIONS = 18
+    DESCRIBE_TOPIC_PARTITIONS = 75
 
-    # Error code: 0 (no error)
-    error_code = (0).to_bytes(2, byteorder="big")
+    @staticmethod
+    def parse(data: bytes) -> 'ApiKey':
+        # We need to interpret the first two bytes as a 16-bit integer (big-endian)
+        apikey_value = int.from_bytes(data[:2], 'big')
+        return ApiKey.try_from(apikey_value)
 
-    # Throttle time: 0 (no throttling)
-    throttle_time_ms = (0).to_bytes(4, byteorder="big")
+    @staticmethod
+    def try_from(value: int) -> 'ApiKey':
+        try:
+            return ApiKey(value)
+        except ValueError:
+            if value <= 75:
+                raise KafkaError(f"Unimplemented ApiKey {value}")
+            else:
+                raise KafkaError(f"Invalid ApiKey {value}")
 
-    # API keys
-    api_keys = [
-        {"key": 18, "min_version": 0, "max_version": 4},  # ApiVersions key
-        {"key": 75, "min_version": 0, "max_version": 0},  # Custom key
-    ]
-    num_api_keys = len(api_keys)
-    api_keys_data = b""
-    for api_info in api_keys:
-        api_keys_data += api_info["key"].to_bytes(2, byteorder="big")
-        api_keys_data += api_info["min_version"].to_bytes(2, byteorder="big")
-        api_keys_data += api_info["max_version"].to_bytes(2, byteorder="big")
+    def __str__(self):
+        if self == ApiKey.FETCH:
+            return "fetch"
+        elif self == ApiKey.API_VERSIONS:
+            return "api-versions"
+        elif self == ApiKey.DESCRIBE_TOPIC_PARTITIONS:
+            return "describe-topic-partitions"
 
-    # Tagged fields: Empty for this response
-    tagged_fields = (0).to_bytes(1, byteorder="big")
+class KafkaError(Exception):
+    pass
 
-    # Construct payload
-    payload = error_code + throttle_time_ms
-    payload += num_api_keys.to_bytes(4, byteorder="big")
-    payload += api_keys_data
-    payload += tagged_fields
-
-    # Prepend length of the message
-    response_length = len(header + payload)
-    response = response_length.to_bytes(4, byteorder="big") + header + payload
-    return response
-
-
-def handle_client(client_socket, client_address):
-    """
-    Handles a Kafka client connection, decodes the request, and sends the response.
-    """
-    print(f"[Server] Handling client from {client_address}")
+def handle_client(client_socket):
     try:
-        while True:
-            # Receive the request
-            request = client_socket.recv(1024)
-            if not request:
-                print(f"[Server] Client {client_address} disconnected.")
-                break
-
-            print(f"[Server] Received request from {client_address}: {request.hex()}")
-
-            # Decode request (correlation_id is at offset 4–8)
-            correlation_id = int.from_bytes(request[4:8], byteorder="big")
-            print(f"[Server] Decoded correlation_id from {client_address}: {correlation_id}")
-
-            # Construct and send the response
-            response = construct_response(correlation_id)
-            client_socket.sendall(response)
-            print(f"[Server] Sent response to {client_address}: {response.hex()}")
-
-    except Exception as e:
-        print(f"[Server] Error handling client {client_address}: {e}")
+        data = client_socket.recv(1024)
+        if data:
+            apikey = ApiKey.parse(data)
+            print(f"Received API key: {apikey}")
+        else:
+            print("No data received")
+    except KafkaError as e:
+        print(f"Error: {e}")
     finally:
         client_socket.close()
-        print(f"[Server] Connection with {client_address} closed.")
 
-
-def start_server(host="localhost", port=9092):
-    """
-    Starts a server to handle Kafka client connections.
-    """
+def server():
     server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    server_socket.bind((host, port))
+    server_socket.bind(('localhost', 9092))  # Binding to localhost and port 9092
     server_socket.listen(5)
-    print(f"[Server] Listening on {host}:{port}...")
+    print("Server is listening on localhost:9092...")
 
-    try:
-        while True:
-            # Accept a new client connection
-            client_socket, client_address = server_socket.accept()
-            print(f"[Server] Client connected from {client_address}")
-
-            # Start a new thread for each client
-            client_thread = threading.Thread(
-                target=handle_client, args=(client_socket, client_address), daemon=True
-            )
-            client_thread.start()
-
-    except KeyboardInterrupt:
-        print("\n[Server] Shutting down server...")
-    finally:
-        server_socket.close()
-
+    while True:
+        client_socket, addr = server_socket.accept()
+        print(f"Connection from {addr} established")
+        threading.Thread(target=handle_client, args=(client_socket,)).start()
 
 if __name__ == "__main__":
-    start_server()
+    server()
