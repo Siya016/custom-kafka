@@ -1,123 +1,6 @@
 
 
 
-# import socket
-# import threading
-
-# def parse_message(msg):
-#     """
-#     Parses a Kafka request message and extracts apiKey, apiVersion, and correlationId.
-#     """
-#     api_key = int.from_bytes(msg[4:6], byteorder="big")
-#     api_version = int.from_bytes(msg[6:8], byteorder="big")
-#     correlation_id = int.from_bytes(msg[8:12], byteorder="big")
-#     return api_key, api_version, correlation_id
-
-# def construct_response(correlation_id, api_key, api_version):
-#     """
-#     Constructs a Kafka response message based on the request details.
-#     """
-#     # Create the header (correlation ID) - 4 bytes for the correlation_id
-#     header = correlation_id.to_bytes(4, byteorder="big")
-
-#     # Error code: 0 indicates no error
-#     error_code = 0
-
-#     # Throttle time in milliseconds
-#     throttle_time_ms = 0
-
-#     # Define API keys and their versions
-#     api_entries = [
-#         {
-#             "api_key": 18,  # ApiVersions
-#             "min_version": 0,
-#             "max_version": 4,
-#         },
-#         {
-#             "api_key": 75,  # DescribeTopicPartitions
-#             "min_version": 0,
-#             "max_version": 0,
-#         },
-#     ]
-
-#     # Construct the response payload
-#     payload = bytearray()
-
-#     # Add the error code (2 bytes)
-#     payload += error_code.to_bytes(2, byteorder="big")
-
-#     # Add number of API keys (4 bytes)
-    
-#     num_api_keys = len(api_entries)
-#     payload += num_api_keys.to_bytes(4, byteorder="big")
-
-#     # Add each API key entry
-#     for entry in api_entries:
-#         # API key (2 bytes), min_version (2 bytes), max_version (2 bytes)
-#         payload += entry["api_key"].to_bytes(2, byteorder="big")  # API key
-#         payload += entry["min_version"].to_bytes(2, byteorder="big")  # MinVersion
-#         payload += entry["max_version"].to_bytes(2, byteorder="big")  # MaxVersion
-
-#     # Add throttle time (4 bytes)
-#     payload += throttle_time_ms.to_bytes(4, byteorder="big")
-
-#     # The length of the entire response (header + payload)
-#     response_length = 4 + len(payload)  # 4 bytes for header
-#     response = response_length.to_bytes(4, byteorder="big") + header + payload
-
-#     return response
-
-
-# def handle_client(client, addr):
-#     """
-#     Handles a single client connection, processing one or more requests.
-#     """
-#     print(f"Handling client from {addr}")
-#     try:
-#         while True:
-#             request = client.recv(1024)
-#             if not request:
-#                 break  # Client disconnected
-#             # Parse the request
-#             api_key, api_version, correlation_id = parse_message(request)
-#             print(f"Received request: apiKey={api_key}, apiVersion={api_version}, correlationId={correlation_id}")
-#             # Construct the response
-#             response = construct_response(correlation_id, api_key, api_version)
-#             # Send the response to the client
-#             client.sendall(response)
-#     except ConnectionResetError:
-#         print(f"Connection with {addr} reset by client.")
-#     finally:
-#         client.close()
-#         print(f"Connection with {addr} closed.")
-
-# def start_server(host="localhost", port=9092):
-#     """
-#     Starts the Kafka-like server on the specified host and port.
-#     """
-#     print(f"Starting server on {host}:{port}...")
-#     server = socket.create_server((host, port), reuse_port=True)
-#     server.listen()  # Enable listening for incoming connections
-#     while True:
-#         # Accept a client connection
-#         client, addr = server.accept()
-#         print(f"Client connected from {addr}")
-#         # Handle the client's requests in a new thread
-#         thread = threading.Thread(
-#             target=handle_client, args=(client, addr), daemon=True
-#         )
-#         thread.start()
-
-# def main():
-#     """
-#     Entry point for the program.
-#     """
-#     start_server()
-
-# if __name__ == "__main__":
-#     main()
-
-
 
 # import socket
 # import logging
@@ -234,83 +117,82 @@
 # 
 
 
+
 import socket
-import logging
 import threading
 
-def parse_request(data):
-    """Parses the Kafka request message and extracts relevant information."""
-    api_key = int.from_bytes(data[4:6], byteorder='big')
-    api_version = int.from_bytes(data[6:8], byteorder='big')
-    correlation_id = int.from_bytes(data[8:12], byteorder='big')
-    return api_key, api_version, correlation_id
-
-def construct_response(correlation_id, api_key, api_version):
-    """Constructs the response based on the API key and version."""
-
-    header = correlation_id.to_bytes(4, byteorder='big')
-    error_code = 0
-
-    if api_key == 18:  # ApiVersions
-        payload = error_code.to_bytes(2, byteorder='big')
-        api_keys = [
-            (18, 0, 4),
-            (75, 0, 0)
-        ]
-        payload += len(api_keys).to_bytes(1, byteorder='big')
-        for api_key, min_version, max_version in api_keys:
-            payload += api_key.to_bytes(2, byteorder='big')
-            payload += min_version.to_bytes(2, byteorder='big')
-            payload += max_version.to_bytes(2, byteorder='big')
-        payload_size = len(payload)
-    elif api_key == 75:  # DescribeTopicPartitions
-        # Implement the logic for DescribeTopicPartitions response
-        payload = ...
-    else:
-        # Default error response
-        payload = error_code.to_bytes(2, byteorder='big')
-        payload += int(0).to_bytes(2, byteorder='big')
-        payload += int(4).to_bytes(2, byteorder='big')
-
-    response_length = len(header + payload)
-    response = response_length.to_bytes(4, byteorder="big") + header + payload
-
-    return response
-
-def handle_client(client_socket, addr):
-    """Handles client connections and processes requests."""
-    print(f"Handling client from {addr}")
-
+def handle_connection(connection: socket.socket):
     while True:
-        try:
-            request_length_bytes = client_socket.recv(4)
-            if not request_length_bytes:
-                break
-
-            request_length = int.from_bytes(request_length_bytes, byteorder='big')
-            request_data = client_socket.recv(request_length)
-
-            api_key, api_version, correlation_id = parse_request(request_data)
-            response = construct_response(correlation_id, api_key, api_version)
-            client_socket.sendall(response)
-        except Exception as e:
-            print(f"Error handling client: {addr}, {str(e)}")
+        msg = recv_request(connection)
+        if not msg:
             break
 
-    client_socket.close()
-    print(f"Connection closed with {addr}")
+        # Extract header and body manually
+        header = msg[:8]
+        body = msg[8:]
 
-def start_server(host='localhost', port=9092):
-    """Starts the server and listens for incoming connections."""
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as server_socket:
-        server_socket.bind((host, port))
-        server_socket.listen()
-        print(f"Server listening on {host}:{port}")
+        # Parse the header fields manually
+        try:
+            correlation_id = int.from_bytes(header[0:4], "big")
+            request_api_version = int.from_bytes(header[4:8], "big")
+        except ValueError:
+            # If header parsing fails, respond with an error
+            response = build_response(correlation_id=0, error_code=35)
+            connection.send(response)
+            continue
 
+        # Validate request API version
+        if not 0 <= request_api_version <= 4:
+            response = build_response(correlation_id, error_code=35)
+        else:
+            response = build_response(
+                correlation_id,
+                error_code=0,
+                api_keys=[(18, 0, 4), (75, 0, 0)],
+                throttle_time_ms=0,
+            )
+
+        connection.send(response)
+
+    connection.shutdown(socket.SHUT_WR)
+    connection.close()
+
+def recv_request(connection: socket.socket) -> bytes:
+    # Receive the message length (first 4 bytes)
+    msg_len_bytes = connection.recv(4)
+    if not msg_len_bytes:
+        return b""
+
+    # Convert length from bytes to an integer
+    msg_len = int.from_bytes(msg_len_bytes, "big")
+    if msg_len == 0:
+        return b""
+
+    # Receive the message body
+    msg = connection.recv(msg_len)
+    if len(msg) != msg_len:
+        print("Invalid length received")
+        return b""
+
+    return msg
+
+def build_response(correlation_id, error_code, api_keys=None, throttle_time_ms=0):
+    """
+    Constructs a response message.
+    """
+    if api_keys is None:
+        api_keys = []
+
+    # Serialize response manually
+    api_keys_str = ",".join(f"({key},{min_ver},{max_ver})" for key, min_ver, max_ver in api_keys)
+    body = f"error_code={error_code},api_keys=[{api_keys_str}],throttle_time_ms={throttle_time_ms}"
+    header = correlation_id.to_bytes(4, "big") + error_code.to_bytes(4, "big")
+    return header + body.encode()
+
+if __name__ == "__main__":
+    with socket.create_server(("localhost", 9092), reuse_port=True) as server:
         while True:
-            client_socket, addr = server_socket.accept()
-            client_handler = threading.Thread(target=handle_client, args=(client_socket, addr), daemon=True)
-            client_handler.start()
+            conn, address = server.accept()
+            t = threading.Thread(target=handle_connection, args=(conn,), daemon=True)
+            t.start()
 
-if __name__ == '__main__':
-    start_server()
