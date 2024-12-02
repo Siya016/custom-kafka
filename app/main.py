@@ -20,6 +20,7 @@ def parse_message(msg):
 def construct_response(correlation_id, api_key, api_version):
     header = correlation_id.to_bytes(4, byteorder="big")
     error_code = 0  # Error code: 0 indicates no error
+    throttle_time_ms = 0  # Throttle time in milliseconds
 
     print(f"Received request: api_key={api_key}, api_version={api_version}")
 
@@ -34,6 +35,7 @@ def construct_response(correlation_id, api_key, api_version):
 
         print(f"Sending ApiVersions response with {len(api_keys)} keys")
         payload = error_code.to_bytes(2, byteorder="big")  # Error code
+        payload += throttle_time_ms.to_bytes(4, byteorder="big") 
         payload += len(api_keys).to_bytes(4, byteorder="big")  # Number of API keys
 
         
@@ -45,7 +47,7 @@ def construct_response(correlation_id, api_key, api_version):
 
             print(f"API Key: {api_info['key']}, Min Version: {api_info['min_version']}, Max Version: {api_info['max_version']}")
 
-        
+        payload += (0).to_bytes(1, byteorder="big")
 
 
     elif api_key == 75:  # DescribeTopicPartitions
