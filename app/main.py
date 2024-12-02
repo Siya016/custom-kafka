@@ -43,7 +43,7 @@ def construct_response(correlation_id, api_key, api_version):
 
             print(f"API Key: {api_info['key']}, Min Version: {api_info['min_version']}, Max Version: {api_info['max_version']}")
 
-        payload += (0).to_bytes(4, byteorder="big")  # Placeholder for throttle_time_ms
+        
 
 
     elif api_key == 75:  # DescribeTopicPartitions
