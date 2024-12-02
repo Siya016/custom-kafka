@@ -33,8 +33,10 @@ def construct_response(correlation_id, api_key, api_version):
         ]
 
         print(f"Sending ApiVersions response with {len(api_keys)} keys")
+        payload = error_code.to_bytes(2, byteorder="big")  # Error code
+        payload += len(api_keys).to_bytes(4, byteorder="big")  # Number of API keys
 
-        payload += len(api_keys).to_bytes(2, byteorder="big") 
+        
 
         for api_info in api_keys:
             payload += api_info["key"].to_bytes(2, byteorder="big")
