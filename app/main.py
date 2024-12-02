@@ -21,7 +21,7 @@ def construct_response(correlation_id, api_key, api_version):
     header = correlation_id.to_bytes(4, byteorder="big")
     error_code = 0  # Error code: 0 indicates no error
 
-    logging.debug(f"Received request: api_key={api_key}, api_version={api_version}")
+    print(f"Received request: api_key={api_key}, api_version={api_version}")
 
     if api_key == 18:  # ApiVersions
         # Construct the ApiVersionsResponse with multiple API keys
@@ -34,7 +34,7 @@ def construct_response(correlation_id, api_key, api_version):
 
         print(f"Sending ApiVersions response with {len(api_keys)} keys")
 
-        payload += int(2).to_bytes(1, byteorder="big")
+        payload += len(api_keys).to_bytes(2, byteorder="big") 
 
         for api_info in api_keys:
             payload += api_info["key"].to_bytes(2, byteorder="big")
@@ -42,6 +42,8 @@ def construct_response(correlation_id, api_key, api_version):
             payload += api_info["max_version"].to_bytes(2, byteorder="big")
 
             print(f"API Key: {api_info['key']}, Min Version: {api_info['min_version']}, Max Version: {api_info['max_version']}")
+
+        payload += (0).to_bytes(4, byteorder="big")  # Placeholder for throttle_time_ms
 
 
     elif api_key == 75:  # DescribeTopicPartitions
