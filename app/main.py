@@ -217,15 +217,22 @@
 #     start_server()
 
 
+import socket
+import threading
+from enum import Enum
+
+class KafkaError(Exception):
+    pass
+
 class ApiKey(Enum):
     FETCH = 1
     API_VERSIONS = 18
     DESCRIBE_TOPIC_PARTITIONS = 75
-    # Add a default value for 0 if needed
-    UNKNOWN = 0
+    UNKNOWN = 0  # Added UNKNOWN for unrecognized API keys
 
     @staticmethod
     def parse(data: bytes) -> 'ApiKey':
+        # Read the first 2 bytes as an integer representing the API key
         apikey_value = int.from_bytes(data[:2], 'big')
         return ApiKey.try_from(apikey_value)
 
@@ -245,3 +252,50 @@ class ApiKey(Enum):
             return "describe-topic-partitions"
         elif self == ApiKey.UNKNOWN:
             return "unknown"
+
+
+# Handle client connections
+def handle_client(client_socket):
+    try:
+        print(f"Connection from {client_socket.getpeername()} established")
+
+        # Receive API key (2 bytes)
+        data = client_socket.recv(2)
+        if not data:
+            raise KafkaError("No data received from client.")
+
+        # Parse API key
+        api_key = ApiKey.parse(data)
+        print(f"Received API key: {api_key}")
+
+        # Send response based on the API key
+        if api_key == ApiKey.FETCH:
+            client_socket.send(b"API Key Fetch received")
+        elif api_key == ApiKey.API_VERSIONS:
+            client_socket.send(b"API Key ApiVersions received")
+        elif api_key == ApiKey.DESCRIBE_TOPIC_PARTITIONS:
+            client_socket.send(b"API Key DescribeTopicPartitions received")
+        else:
+            client_socket.send(f"Error: Unimplemented ApiKey {api_key}".encode())
+
+    except KafkaError as e:
+        client_socket.send(str(e).encode())
+    finally:
+        client_socket.close()
+
+
+# Start the server
+def start_server():
+    server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    server.bind(('localhost', 9092))
+    server.listen(5)
+    print("[Server] Listening on localhost:9092...")
+
+    while True:
+        client_socket, addr = server.accept()
+        print(f"[Server] Client connected from {addr}")
+        client_handler = threading.Thread(target=handle_client, args=(client_socket,))
+        client_handler.start()
+
+if __name__ == "__main__":
+    start_server()
