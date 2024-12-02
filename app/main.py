@@ -217,18 +217,15 @@
 #     start_server()
 
 
-import socket
-import threading
-from enum import Enum
-
 class ApiKey(Enum):
     FETCH = 1
     API_VERSIONS = 18
     DESCRIBE_TOPIC_PARTITIONS = 75
+    # Add a default value for 0 if needed
+    UNKNOWN = 0
 
     @staticmethod
     def parse(data: bytes) -> 'ApiKey':
-        # We need to interpret the first two bytes as a 16-bit integer (big-endian)
         apikey_value = int.from_bytes(data[:2], 'big')
         return ApiKey.try_from(apikey_value)
 
@@ -237,10 +234,7 @@ class ApiKey(Enum):
         try:
             return ApiKey(value)
         except ValueError:
-            if value <= 75:
-                raise KafkaError(f"Unimplemented ApiKey {value}")
-            else:
-                raise KafkaError(f"Invalid ApiKey {value}")
+            raise KafkaError(f"Unimplemented ApiKey {value}")
 
     def __str__(self):
         if self == ApiKey.FETCH:
@@ -249,33 +243,5 @@ class ApiKey(Enum):
             return "api-versions"
         elif self == ApiKey.DESCRIBE_TOPIC_PARTITIONS:
             return "describe-topic-partitions"
-
-class KafkaError(Exception):
-    pass
-
-def handle_client(client_socket):
-    try:
-        data = client_socket.recv(1024)
-        if data:
-            apikey = ApiKey.parse(data)
-            print(f"Received API key: {apikey}")
-        else:
-            print("No data received")
-    except KafkaError as e:
-        print(f"Error: {e}")
-    finally:
-        client_socket.close()
-
-def server():
-    server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    server_socket.bind(('localhost', 9092))  # Binding to localhost and port 9092
-    server_socket.listen(5)
-    print("Server is listening on localhost:9092...")
-
-    while True:
-        client_socket, addr = server_socket.accept()
-        print(f"Connection from {addr} established")
-        threading.Thread(target=handle_client, args=(client_socket,)).start()
-
-if __name__ == "__main__":
-    server()
+        elif self == ApiKey.UNKNOWN:
+            return "unknown"
