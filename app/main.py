@@ -393,8 +393,7 @@
 import socket
 import threading
 
-API_VERSIONS = 18
-FETCH = 1
+DESCRIBE_TOPIC_PARTITIONS = 75  # API key for DescribeTopicPartitions
 UNKNOWN_TOPIC_ERROR = 3  # Error code for UNKNOWN_TOPIC_OR_PARTITION
 
 
@@ -415,7 +414,7 @@ def handle(data):
     correlation_id = data[8:12]
 
     body = b""
-    if request_api_key == FETCH:
+    if request_api_key == DESCRIBE_TOPIC_PARTITIONS:
         # Extract topic_name from request
         topic_name_size = int.from_bytes(data[21:23], "big")
         topic_name = data[23:23 + topic_name_size].decode()
