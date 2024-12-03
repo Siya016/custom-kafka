@@ -220,27 +220,85 @@
 import socket
 import struct
 import threading
-from app import models
+
+# Define the necessary classes and methods locally
+
+class RequestHeaderV0:
+    def __init__(self, correlation_id, request_api_version):
+        self.correlation_id = correlation_id
+        self.request_api_version = request_api_version
+
+    @classmethod
+    def from_bytes(cls, data: bytes):
+        # Unpack the first 8 bytes into correlation_id and request_api_version
+        correlation_id, request_api_version = struct.unpack(">I4xI", data)
+        return cls(correlation_id, request_api_version)
+
+
+class ResponseHeaderV0:
+    def __init__(self, correlation_id):
+        self.correlation_id = correlation_id
+
+    def to_bytes(self):
+        return struct.pack(">I", self.correlation_id)
+
+
+class APIVersionsResponseBodyV4:
+    def __init__(self, error_code, api_keys=None, throttle_time_ms=0):
+        self.error_code = error_code
+        self.api_keys = api_keys or []
+        self.throttle_time_ms = throttle_time_ms
+
+    def to_bytes(self):
+        api_keys_count = len(self.api_keys)
+        api_keys_bytes = b"".join(
+            struct.pack(">hBB", key, min_version, max_version)
+            for key, min_version, max_version in self.api_keys
+        )
+        return (
+            struct.pack(">i", self.error_code)
+            + struct.pack(">i", self.throttle_time_ms)
+            + struct.pack(">i", api_keys_count)
+            + api_keys_bytes
+        )
+
+
+class Response:
+    def __init__(self, header, body):
+        self.header = header
+        self.body = body
+
+    def serialize(self):
+        header_bytes = self.header.to_bytes()
+        body_bytes = self.body.to_bytes()
+        total_length = len(header_bytes) + len(body_bytes)
+        return struct.pack(">I", total_length) + header_bytes + body_bytes
+
+
+# Handle client connections
 def handle_connection(connection: socket.socket):
     while True:
         msg = recv_request(connection)
         if not msg:
             break
-        req_header = models.RequestHeaderV0.from_bytes(msg[:8])
+        req_header = RequestHeaderV0.from_bytes(msg[:8])
         req_body = msg[8:]
-        resp_header = models.ResponseHeaderV0(req_header.correlation_id)
+        resp_header = ResponseHeaderV0(req_header.correlation_id)
         if not 0 <= req_header.request_api_version <= 4:
-            resp_body = models.APIVersionsResponseBodyV4(error_code=35)
+            resp_body = APIVersionsResponseBodyV4(error_code=35)
         else:
-            resp_body = models.APIVersionsResponseBodyV4(
+            resp_body = APIVersionsResponseBodyV4(
                 error_code=0,
                 api_keys=[(18, 0, 4), (75, 0, 0)],
                 throttle_time_ms=0,
             )
-        response = models.Response(resp_header, resp_body)
+        response = Response(resp_header, resp_body)
         connection.send(response.serialize())
     connection.shutdown(socket.SHUT_WR)
     connection.close()
+
+
+# Receive request from the client
 def recv_request(connection: socket.socket) -> bytes:
     msg_len = connection.recv(4)
     if not msg_len:
@@ -250,9 +308,12 @@ def recv_request(connection: socket.socket) -> bytes:
         return b""
     msg = connection.recv(msg_len)
     if len(msg) != msg_len:
-        print("invalid length received")
+        print("Invalid length received")
         return b""
     return msg
+
+
+# Main server setup
 if __name__ == "__main__":
     with socket.create_server(("localhost", 9092), reuse_port=True) as server:
         while True:
