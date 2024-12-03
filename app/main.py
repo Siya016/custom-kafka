@@ -217,106 +217,176 @@
 #     start_server()
 
 
-import socket
-import struct
-import threading
-
-# Define the necessary classes and methods locally
-
-class RequestHeaderV0:
-    def __init__(self, correlation_id, request_api_version):
-        self.correlation_id = correlation_id
-        self.request_api_version = request_api_version
-
-    @classmethod
-    def from_bytes(cls, data: bytes):
-        # Unpack the first 8 bytes into correlation_id and request_api_version
-        correlation_id, request_api_version = struct.unpack(">I4xI", data)
-        return cls(correlation_id, request_api_version)
-
-
-class ResponseHeaderV0:
-    def __init__(self, correlation_id):
-        self.correlation_id = correlation_id
-
-    def to_bytes(self):
-        return struct.pack(">I", self.correlation_id)
-
-
-class APIVersionsResponseBodyV4:
-    def __init__(self, error_code, api_keys=None, throttle_time_ms=0):
-        self.error_code = error_code
-        self.api_keys = api_keys or []
-        self.throttle_time_ms = throttle_time_ms
-
-    def to_bytes(self):
-        api_keys_count = len(self.api_keys)
-        api_keys_bytes = b"".join(
-            struct.pack(">hBB", key, min_version, max_version)
-            for key, min_version, max_version in self.api_keys
-        )
-        return (
-            struct.pack(">i", self.error_code)
-            + struct.pack(">i", self.throttle_time_ms)
-            + struct.pack(">i", api_keys_count)
-            + api_keys_bytes
-        )
-
-
-class Response:
-    def __init__(self, header, body):
-        self.header = header
-        self.body = body
-
-    def serialize(self):
-        header_bytes = self.header.to_bytes()
-        body_bytes = self.body.to_bytes()
-        total_length = len(header_bytes) + len(body_bytes)
-        return struct.pack(">I", total_length) + header_bytes + body_bytes
-
-
-# Handle client connections
-def handle_connection(connection: socket.socket):
+import socket  # noqa: F401
+import os
+API_VERSIONS = 18
+FETCH = 1
+def make_body_ApiVersions(data):
+    # error_code
+    body = int(0).to_bytes(2, "big")
+    # Array size INT32
+    # ????????????????
+    # COMPACT_ARRAY: size + 1 como UNSIGNED_VARINT
+    
+    # Number of api versions + 1
+    # 4 for
+    #  Include DescribeTopicPartitions in APIVersions #yk1
+    body += int(4).to_bytes(1, "big")
+    # ARRAY: size as INT32, does not work
+    # body += int(1).to_bytes(4, "big")
+    # api version 18, minversion(4), maxversion(>=4) 3 INT16
+    body += (
+        int(18).to_bytes(2, "big")
+        + int(4).to_bytes(2, "big")
+        + int(4).to_bytes(2, "big")
+    )
+    # tagged?? INT32
+    # codecrafters challenge:
+    # The value for this will always be a null byte in this challenge (i.e. no tagged fields are present)
+    body += b"\x00"
+    # api version 1 (Fetch), minversion(4), maxversion(>=16) 3 INT16
+    body += (
+        int(1).to_bytes(2, "big")
+        + int(4).to_bytes(2, "big")
+        + int(16).to_bytes(2, "big")
+    )
+    # tagged?? INT32
+    # codecrafters challenge:
+    # The value for this will always be a null byte in this challenge (i.e. no tagged fields are present)
+    body += b"\x00"
+    #  Include DescribeTopicPartitions in APIVersions #yk1
+    # api version 75, minversion(0>=0), max(version>=0)
+    body += int(75).to_bytes(2) + int(0).to_bytes(2) + int(0).to_bytes(2)
+    body += b"\x00"
+    # ---
+    # throttle_time_ms INT32
+    body += int(0).to_bytes(4, "big")
+    # tagged?? INT32
+    body += b"\x00"
+    return body
+def make_body_Fetch(data):
+    max_wait_ms = data[0:4]
+    min_bytes = data[4:8]
+    max_bytes = data[8:12]
+    isolation_level = data[12]
+    session_id = data[13:17]
+    session_epoch = data[17:21]
+    # [topics] = topic_id [partitions] TAG_BUFFER
+    # size of topics = UNSIGNED_VARINT
+    # NO HAY ???
+    topics_size = data[21]
+    # UUID
+    topic_id = data[22:38]
+    #  ...
+    print("Topics size: ", topics_size)
+    print("Topic id: ", topic_id)
+    # throttle_time_ms
+    body = int(0).to_bytes(4, "big")
+    # error_code
+    body += int(0).to_bytes(2, "big")
+    # session_id
+    # body += session_id
+    body += int(0).to_bytes(4)
+    # RESPONSES-----------------------------
+    # Beware! It seems that uses 1 for 0 topics instead of 0 per Kafka's doc
+    # 0 Responses
+    if topics_size == 0 or topics_size == 1:
+        print("No topic")
+        body += int(0).to_bytes(1, "big")
+    else:
+        # 1 Response
+        body += b"\x02"
+        # Topic
+        body += topic_id
+        # Partitions 1 element
+        body += b"\x02"
+        # Partion index INT32
+        body += b"\x00\x00\x00\x00"
+        # Error code 100 UNKNOWN_TOPIC INT16
+        body += int(100).to_bytes(2)
+        body += int(0).to_bytes(8, byteorder="big")  # high watermark
+        body += int(0).to_bytes(8, byteorder="big")  # last stable offset
+        body += int(0).to_bytes(8, byteorder="big")  # log start offset
+        body += int(0).to_bytes(1, byteorder="big")  # num aborted transactions
+        body += int(0).to_bytes(4, byteorder="big")  # preferred read replica
+        body += int(0).to_bytes(1, byteorder="big")  # num records
+        # TAG_BUFFER Partition
+        body += b"\x00"
+        # TAG_BUFFER Topic
+        body += b"\x00"
+    # TAG_BUFFER Final
+    body += b"\x00"
+    return body
+def handle(data):
+    print("Request:\n", data, "\n")
+    tam = data[0:4]  # length field
+    request_api_key = data[4:6]
+    request_api_version = data[6:8]
+    correlation_id = data[8:12]
+    # Rest of fields ignored !!!
+    # Fetch with an unknown topic
+    client_id_size = data[12:14]
+    isize = int.from_bytes(client_id_size)
+    if isize > 0:
+        client_id = data[14 : 14 + isize]
+        tagged = data[14 + isize]
+    else:
+        client_id = ""
+        tagged = data[14]
+    print(f"client_id = {client_id}")
+    req_index = 14 + isize + 1
+    # client_id
+    # tagged_fields
+    version = int.from_bytes(request_api_version, signed=True)
+    # print(request_api_version, f'version(int) = {version}')
+    api_key = int.from_bytes(request_api_key)
+    if version in [0, 1, 2, 3, 4, 16]:
+        # error code INT16
+        # body = int(0).to_bytes(2, "big")
+        if api_key == API_VERSIONS:
+            print("ApiVersions")
+            body = make_body_ApiVersions(data[12:])
+        elif api_key == FETCH:
+            print("Fetch")
+            body = make_body_Fetch(data[req_index:])
+    else:
+        print(f"Error! version: {version} request_api_version: ", request_api_version)
+        body = int(35).to_bytes(2, "big")
+    # Fetch with an unknown topic #hn6
+    # Espera Response header v1:
+    # correlation_id TAG_BUFFER
+    size = 4 + len(body)
+    if api_key == FETCH:
+        # Response header v2
+        size += 1
+    header = size.to_bytes(4, "big") + correlation_id
+    if api_key == FETCH:
+        # Response header v2
+        header += b"\x00"
+    print(f"Size: {size}")
+    print("Header: ", end="")
+    print(header)
+    print("Body: ")
+    print(body)
+    return header + body
+def main():
+    # You can use print statements as follows for debugging,
+    # they'll be visible when running tests.
+    print("Logs from your program will appear here!")
+    # Uncomment this to pass the first stage
+    #
+    server = socket.create_server(("localhost", 9092), reuse_port=True)
     while True:
-        msg = recv_request(connection)
-        if not msg:
-            break
-        req_header = RequestHeaderV0.from_bytes(msg[:8])
-        req_body = msg[8:]
-        resp_header = ResponseHeaderV0(req_header.correlation_id)
-        if not 0 <= req_header.request_api_version <= 4:
-            resp_body = APIVersionsResponseBodyV4(error_code=35)
-        else:
-            resp_body = APIVersionsResponseBodyV4(
-                error_code=0,
-                api_keys=[(18, 0, 4), (75, 0, 0)],
-                throttle_time_ms=0,
-            )
-        response = Response(resp_header, resp_body)
-        connection.send(response.serialize())
-    connection.shutdown(socket.SHUT_WR)
-    connection.close()
-
-
-# Receive request from the client
-def recv_request(connection: socket.socket) -> bytes:
-    msg_len = connection.recv(4)
-    if not msg_len:
-        return b""
-    (msg_len,) = struct.unpack(">I", msg_len)
-    if msg_len == 0:
-        return b""
-    msg = connection.recv(msg_len)
-    if len(msg) != msg_len:
-        print("Invalid length received")
-        return b""
-    return msg
-
-
-# Main server setup
+        client, addr = server.accept()  # wait for client
+        pid = os.fork()
+        if pid == 0:
+            # Child
+            server.close()
+            while True:
+                r = client.recv(1024)
+                client.sendall(handle(r))
+        print(f"New process: {pid}")
+        client.close()
 if __name__ == "__main__":
-    with socket.create_server(("localhost", 9092), reuse_port=True) as server:
-        while True:
-            conn, address = server.accept()
-            t = threading.Thread(target=handle_connection, args=(conn,), daemon=True)
-            t.start()
+    main()
+
