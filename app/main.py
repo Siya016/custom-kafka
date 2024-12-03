@@ -218,84 +218,44 @@
 
 
 import socket
+import struct
 import threading
-from enum import Enum
-
-class KafkaError(Exception):
-    pass
-
-class ApiKey(Enum):
-    FETCH = 1
-    API_VERSIONS = 18
-    DESCRIBE_TOPIC_PARTITIONS = 75
-    UNKNOWN = 0  # Added UNKNOWN for unrecognized API keys
-
-    @staticmethod
-    def parse(data: bytes) -> 'ApiKey':
-        # Read the first 2 bytes as an integer representing the API key
-        apikey_value = int.from_bytes(data[:2], 'big')
-        return ApiKey.try_from(apikey_value)
-
-    @staticmethod
-    def try_from(value: int) -> 'ApiKey':
-        try:
-            return ApiKey(value)
-        except ValueError:
-            raise KafkaError(f"Unimplemented ApiKey {value}")
-
-    def __str__(self):
-        if self == ApiKey.FETCH:
-            return "fetch"
-        elif self == ApiKey.API_VERSIONS:
-            return "api-versions"
-        elif self == ApiKey.DESCRIBE_TOPIC_PARTITIONS:
-            return "describe-topic-partitions"
-        elif self == ApiKey.UNKNOWN:
-            return "unknown"
-
-
-# Handle client connections
-def handle_client(client_socket):
-    try:
-        print(f"Connection from {client_socket.getpeername()} established")
-
-        # Receive API key (2 bytes)
-        data = client_socket.recv(2)
-        if not data:
-            raise KafkaError("No data received from client.")
-
-        # Parse API key
-        api_key = ApiKey.parse(data)
-        print(f"Received API key: {api_key}")
-
-        # Send response based on the API key
-        if api_key == ApiKey.FETCH:
-            client_socket.send(b"API Key Fetch received")
-        elif api_key == ApiKey.API_VERSIONS:
-            client_socket.send(b"API Key ApiVersions received")
-        elif api_key == ApiKey.DESCRIBE_TOPIC_PARTITIONS:
-            client_socket.send(b"API Key DescribeTopicPartitions received")
-        else:
-            client_socket.send(f"Error: Unimplemented ApiKey {api_key}".encode())
-
-    except KafkaError as e:
-        client_socket.send(str(e).encode())
-    finally:
-        client_socket.close()
-
-
-# Start the server
-def start_server():
-    server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    server.bind(('localhost', 9092))
-    server.listen(5)
-    print("[Server] Listening on localhost:9092...")
-
+from app import models
+def handle_connection(connection: socket.socket):
     while True:
-        client_socket, addr = server.accept()
-        print(f"[Server] Client connected from {addr}")
-        client_handler = threading.Thread(target=handle_client, args=(client_socket,))
-        client_handler.start()
-
+        msg = recv_request(connection)
+        if not msg:
+            break
+        req_header = models.RequestHeaderV0.from_bytes(msg[:8])
+        req_body = msg[8:]
+        resp_header = models.ResponseHeaderV0(req_header.correlation_id)
+        if not 0 <= req_header.request_api_version <= 4:
+            resp_body = models.APIVersionsResponseBodyV4(error_code=35)
+        else:
+            resp_body = models.APIVersionsResponseBodyV4(
+                error_code=0,
+                api_keys=[(18, 0, 4), (75, 0, 0)],
+                throttle_time_ms=0,
+            )
+        response = models.Response(resp_header, resp_body)
+        connection.send(response.serialize())
+    connection.shutdown(socket.SHUT_WR)
+    connection.close()
+def recv_request(connection: socket.socket) -> bytes:
+    msg_len = connection.recv(4)
+    if not msg_len:
+        return b""
+    (msg_len,) = struct.unpack(">I", msg_len)
+    if msg_len == 0:
+        return b""
+    msg = connection.recv(msg_len)
+    if len(msg) != msg_len:
+        print("invalid length received")
+        return b""
+    return msg
 if __name__ == "__main__":
-    start_server()
+    with socket.create_server(("localhost", 9092), reuse_port=True) as server:
+        while True:
+            conn, address = server.accept()
+            t = threading.Thread(target=handle_connection, args=(conn,), daemon=True)
+            t.start()
