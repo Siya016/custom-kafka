@@ -519,71 +519,198 @@
 #     asyncio.run(main())
 
 
-import asyncio
+# import asyncio
+# import struct
+
+# def parse_describetopic_request(request):
+#     # Extract the topic name from the request
+#     length = struct.unpack(">h", request[8:10])[0]
+#     client_id = request[10 : 10 + length].decode("utf-8")
+#     offset = 10 + length
+#     array_length = struct.unpack(">i", request[offset : offset + 4])[0]
+#     offset += 4
+#     topic_name_length = struct.unpack(">h", request[offset : offset + 2])[0]
+#     offset += 2
+#     topic_name = request[offset : offset + topic_name_length].decode("utf-8")
+#     return topic_name
+
+# def create_response(request):
+#     print(f"Request (Hex): {request.hex()}")
+#     api_key = struct.unpack(">h", request[:2])[0]  # API key
+#     correlation_id = struct.unpack(">i", request[4:8])[0]  # Correlation ID
+
+#     if api_key == 75:  # DescribeTopicPartitions (v0)
+#         topic_name = parse_describetopic_request(request)
+#         print(f"Topic Name: {topic_name}")
+
+#         # Response Fields
+#         throttle_time_ms = 0
+#         topic_error_code = 0
+#         topic_id = "00000000-0000-0000-0000-000000000000"  # Example UUID
+#         partitions_array = 1
+
+#         # Partition Data
+#         partition_error_code = 0
+#         partition_index = 0
+#         leader_id = 1
+#         replica_nodes = [1]
+#         isr_nodes = [1]
+
+#         # Body Construction
+#         body = struct.pack(">i", throttle_time_ms)  # Throttle time
+#         body += struct.pack(">i", 1)  # Number of topics
+#         body += struct.pack(">h", topic_error_code)  # Topic error code
+#         body += struct.pack(">h", len(topic_name))  # Topic name length
+#         body += topic_name.encode("utf-8")  # Topic name
+#         body += bytes.fromhex(topic_id.replace("-", ""))  # Topic ID
+#         body += struct.pack(">i", partitions_array)  # Number of partitions
+
+#         # Partition Data
+#         body += struct.pack(">h", partition_error_code)  # Partition error code
+#         body += struct.pack(">i", partition_index)  # Partition index
+#         body += struct.pack(">i", leader_id)  # Leader ID
+#         body += struct.pack(">i", len(replica_nodes))  # Number of replicas
+#         for node in replica_nodes:
+#             body += struct.pack(">i", node)  # Replica node ID
+#         body += struct.pack(">i", len(isr_nodes))  # Number of ISR nodes
+#         for node in isr_nodes:
+#             body += struct.pack(">i", node)  # ISR node ID
+
+#     # Header Construction
+#     response_message_size = len(body) + 4
+#     header = struct.pack(">i", response_message_size)
+#     header += struct.pack(">i", correlation_id)
+
+#     response = header + body
+#     print(f"Response (Hex): {response.hex()}")
+#     return response
+
+# async def handle_client(reader, writer):
+#     try:
+#         while True:
+#             message_size_data = await reader.readexactly(4)
+#             if not message_size_data:
+#                 break
+#             message_size = struct.unpack(">i", message_size_data)[0]
+#             request = await reader.readexactly(message_size)
+#             response = create_response(request)
+#             writer.write(response)
+#             await writer.drain()
+#     except asyncio.IncompleteReadError:
+#         print("Connection closed unexpectedly")
+#     except Exception as e:
+#         print(f"Error: {e}")
+#     finally:
+#         writer.close()
+#         await writer.wait_closed()
+
+# async def main():
+#     server = await asyncio.start_server(handle_client, "localhost", 9092)
+#     async with server:
+#         await server.serve_forever()
+
+# if __name__ == "__main__":
+#     asyncio.run(main())
+
 import struct
+import asyncio
+import os
+
+def read_kafka_metadata_log(file_path, topic_name):
+    try:
+        with open(file_path, "rb") as f:
+            while True:
+                offset_data = f.read(8)
+                if not offset_data:
+                    break
+                offset = struct.unpack(">q", offset_data)[0]
+
+                length_data = f.read(4)
+                if not length_data:
+                    break
+                message_length = struct.unpack(">i", length_data)[0]
+
+                message_data = f.read(message_length)
+                if not message_data:
+                    break
+
+                key_length = struct.unpack(">i", message_data[:4])[0]
+                key = message_data[4:4 + key_length]
+                value = message_data[4 + key_length:]
+
+                if topic_name.encode("utf-8") in value:
+                    return True
+    except FileNotFoundError:
+        print(f"Log file not found: {file_path}")
+    except Exception as e:
+        print(f"Error reading log file: {e}")
+    return False
+
 
 def parse_describetopic_request(request):
-    # Extract the topic name from the request
-    length = struct.unpack(">h", request[8:10])[0]
-    client_id = request[10 : 10 + length].decode("utf-8")
-    offset = 10 + length
-    array_length = struct.unpack(">i", request[offset : offset + 4])[0]
-    offset += 4
-    topic_name_length = struct.unpack(">h", request[offset : offset + 2])[0]
-    offset += 2
-    topic_name = request[offset : offset + topic_name_length].decode("utf-8")
-    return topic_name
+    try:
+        length = struct.unpack(">h", request[8:10])[0]
+        client_id = request[10:10 + length].decode("utf-8")
+        offset = 10 + length
+
+        array_length = struct.unpack(">B", request[offset:offset + 1])[0]
+        offset += 1
+
+        topic_name_length = struct.unpack(">h", request[offset:offset + 2])[0]
+        offset += 2
+        topic_name = request[offset:offset + topic_name_length].decode("utf-8")
+
+        return topic_name
+    except Exception as e:
+        print(f"Error parsing DescribeTopic request: {e}")
+        raise
+
 
 def create_response(request):
     print(f"Request (Hex): {request.hex()}")
-    api_key = struct.unpack(">h", request[:2])[0]  # API key
-    correlation_id = struct.unpack(">i", request[4:8])[0]  # Correlation ID
+    api_key = struct.unpack(">h", request[:2])[0]
+    correlation_id = struct.unpack(">i", request[4:8])[0]
 
-    if api_key == 75:  # DescribeTopicPartitions (v0)
+    if api_key == 75:
         topic_name = parse_describetopic_request(request)
-        print(f"Topic Name: {topic_name}")
+        metadata_log_path = "/tmp/kraft-combined-logs/__cluster_metadata-0/00000000000000000000.log"
 
-        # Response Fields
-        throttle_time_ms = 0
-        topic_error_code = 0
-        topic_id = "00000000-0000-0000-0000-000000000000"  # Example UUID
-        partitions_array = 1
+        if read_kafka_metadata_log(metadata_log_path, topic_name):
+            throttle_time_ms = 0
+            error_code = 0
+            uuid = "00000000-0000-0000-0000-000000000000"
+            is_internal = 0
+            partitions_array = 1
+            partition_index = 0
+            leader_id = 1
+            replicas = [1]
+            isr = [1]
+            partition_error_code = 0
+            topic_authorized_operations = int("00000df8", 16)
 
-        # Partition Data
-        partition_error_code = 0
-        partition_index = 0
-        leader_id = 1
-        replica_nodes = [1]
-        isr_nodes = [1]
+            body = struct.pack(">i", throttle_time_ms)
+            body += struct.pack(">B", 1)
+            body += struct.pack(">h", error_code)
+            body += struct.pack(">h", len(topic_name)) + topic_name.encode("utf-8")
+            body += bytes.fromhex(uuid.replace("-", ""))
+            body += struct.pack(">B", is_internal)
+            body += struct.pack(">i", partitions_array)
+            body += struct.pack(">i", partition_index)
+            body += struct.pack(">i", leader_id)
+            body += struct.pack(">B", len(replicas))
+            body += struct.pack(">i", replicas[0])
+            body += struct.pack(">B", len(isr))
+            body += struct.pack(">i", isr[0])
+            body += struct.pack(">h", partition_error_code)
+            body += struct.pack(">i", topic_authorized_operations)
 
-        # Body Construction
-        body = struct.pack(">i", throttle_time_ms)  # Throttle time
-        body += struct.pack(">i", 1)  # Number of topics
-        body += struct.pack(">h", topic_error_code)  # Topic error code
-        body += struct.pack(">h", len(topic_name))  # Topic name length
-        body += topic_name.encode("utf-8")  # Topic name
-        body += bytes.fromhex(topic_id.replace("-", ""))  # Topic ID
-        body += struct.pack(">i", partitions_array)  # Number of partitions
+            response_message_size = len(body) + 4
+            header = struct.pack(">i", response_message_size)
+            header += struct.pack(">i", correlation_id)
+            return header + body
 
-        # Partition Data
-        body += struct.pack(">h", partition_error_code)  # Partition error code
-        body += struct.pack(">i", partition_index)  # Partition index
-        body += struct.pack(">i", leader_id)  # Leader ID
-        body += struct.pack(">i", len(replica_nodes))  # Number of replicas
-        for node in replica_nodes:
-            body += struct.pack(">i", node)  # Replica node ID
-        body += struct.pack(">i", len(isr_nodes))  # Number of ISR nodes
-        for node in isr_nodes:
-            body += struct.pack(">i", node)  # ISR node ID
+    raise ValueError("Unsupported API key")
 
-    # Header Construction
-    response_message_size = len(body) + 4
-    header = struct.pack(">i", response_message_size)
-    header += struct.pack(">i", correlation_id)
-
-    response = header + body
-    print(f"Response (Hex): {response.hex()}")
-    return response
 
 async def handle_client(reader, writer):
     try:
@@ -604,10 +731,12 @@ async def handle_client(reader, writer):
         writer.close()
         await writer.wait_closed()
 
+
 async def main():
     server = await asyncio.start_server(handle_client, "localhost", 9092)
     async with server:
         await server.serve_forever()
+
 
 if __name__ == "__main__":
     asyncio.run(main())
