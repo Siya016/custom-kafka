@@ -649,65 +649,78 @@ def read_kafka_metadata_log(file_path, topic_name):
 
 def parse_describetopic_request(request):
     try:
-        length = struct.unpack(">h", request[8:10])[0]
-        client_id = request[10:10 + length].decode("utf-8")
-        offset = 10 + length
+        # Client ID length and value
+        client_id_length = struct.unpack(">h", request[8:10])[0]
+        client_id = request[10:10 + client_id_length].decode("utf-8", errors="ignore")
+        offset = 10 + client_id_length
 
-        array_length = struct.unpack(">B", request[offset:offset + 1])[0]
-        offset += 1
+        # Array length
+        array_length = struct.unpack(">h", request[offset:offset + 2])[0]
+        offset += 2
 
+        # Topic name length and value
         topic_name_length = struct.unpack(">h", request[offset:offset + 2])[0]
         offset += 2
         topic_name = request[offset:offset + topic_name_length].decode("utf-8")
+        offset += topic_name_length
 
-        return topic_name
+        # Skip remaining binary fields
+        partition_limit = struct.unpack(">i", request[offset:offset + 4])[0]
+        offset += 4
+        cursor = request[offset]  # Single byte
+
+        return topic_name, partition_limit, cursor
+    except UnicodeDecodeError as e:
+        raise ValueError(f"UnicodeDecodeError at position {e.start}: {e.reason}")
     except Exception as e:
-        print(f"Error parsing DescribeTopic request: {e}")
-        raise
+        raise ValueError(f"Error parsing DescribeTopic request: {e}")
 
 
 def create_response(request):
     print(f"Request (Hex): {request.hex()}")
-    api_key = struct.unpack(">h", request[:2])[0]
-    correlation_id = struct.unpack(">i", request[4:8])[0]
+    api_key = struct.unpack(">h", request[:2])[0]  # API key
+    correlation_id = struct.unpack(">i", request[4:8])[0]  # Correlation ID
 
-    if api_key == 75:
-        topic_name = parse_describetopic_request(request)
-        metadata_log_path = "/tmp/kraft-combined-logs/__cluster_metadata-0/00000000000000000000.log"
+    if api_key == 75:  # DescribeTopicPartitions
+        try:
+            topic_name, partition_limit, cursor = parse_describetopic_request(request)
 
-        if read_kafka_metadata_log(metadata_log_path, topic_name):
+            # Create response
             throttle_time_ms = 0
-            error_code = 0
-            uuid = "00000000-0000-0000-0000-000000000000"
-            is_internal = 0
-            partitions_array = 1
+            error_code = 0  # No error
+            partitions_array = 1  # Single partition
             partition_index = 0
+            partition_error_code = 0  # No error
             leader_id = 1
             replicas = [1]
             isr = [1]
-            partition_error_code = 0
-            topic_authorized_operations = int("00000df8", 16)
 
             body = struct.pack(">i", throttle_time_ms)
-            body += struct.pack(">B", 1)
             body += struct.pack(">h", error_code)
-            body += struct.pack(">h", len(topic_name)) + topic_name.encode("utf-8")
-            body += bytes.fromhex(uuid.replace("-", ""))
-            body += struct.pack(">B", is_internal)
-            body += struct.pack(">i", partitions_array)
-            body += struct.pack(">i", partition_index)
-            body += struct.pack(">i", leader_id)
-            body += struct.pack(">B", len(replicas))
-            body += struct.pack(">i", replicas[0])
-            body += struct.pack(">B", len(isr))
-            body += struct.pack(">i", isr[0])
+            body += struct.pack(">h", len(topic_name))
+            body += topic_name.encode("utf-8")
+            body += struct.pack(">h", partitions_array)
+            body += struct.pack(">h", partition_index)
             body += struct.pack(">h", partition_error_code)
-            body += struct.pack(">i", topic_authorized_operations)
+            body += struct.pack(">i", leader_id)
+            body += struct.pack(">h", len(replicas))
+            body += struct.pack(">i", replicas[0])
+            body += struct.pack(">h", len(isr))
+            body += struct.pack(">i", isr[0])
 
             response_message_size = len(body) + 4
             header = struct.pack(">i", response_message_size)
             header += struct.pack(">i", correlation_id)
-            return header + body
+            response = header + body
+            print(f"Response (Hex): {response.hex()}")
+            return response
+        except ValueError as e:
+            print(f"Error parsing DescribeTopic request: {e}")
+            return b""
+    else:
+        print("Unsupported API key")
+        return b""
+
 
     raise ValueError("Unsupported API key")
 
