@@ -1,143 +1,152 @@
-
-
+import contextlib
+import io
 import struct
-import asyncio
-import os
-
-def read_kafka_metadata_log(file_path, topic_name):
-    try:
-        with open(file_path, "rb") as f:
-            while True:
-                offset_data = f.read(8)
-                if not offset_data:
-                    break
-                offset = struct.unpack(">q", offset_data)[0]
-
-                length_data = f.read(4)
-                if not length_data:
-                    break
-                message_length = struct.unpack(">i", length_data)[0]
-
-                message_data = f.read(message_length)
-                if not message_data:
-                    break
-
-                key_length = struct.unpack(">i", message_data[:4])[0]
-                key = message_data[4:4 + key_length]
-                value = message_data[4 + key_length:]
-
-                if topic_name.encode("utf-8") in value:
-                    return True
-    except FileNotFoundError:
-        print(f"Log file not found: {file_path}")
-    except Exception as e:
-        print(f"Error reading log file: {e}")
-    return False
-
-
-def parse_describetopic_request(request):
-    try:
-        # Client ID length and value
-        client_id_length = struct.unpack(">h", request[8:10])[0]
-        client_id = request[10:10 + client_id_length].decode("utf-8", errors="ignore")
-        offset = 10 + client_id_length
-
-        # Array length
-        array_length = struct.unpack(">h", request[offset:offset + 2])[0]
-        offset += 2
-
-        # Topic name length and value
-        topic_name_length = struct.unpack(">h", request[offset:offset + 2])[0]
-        offset += 2
-        topic_name = request[offset:offset + topic_name_length].decode("utf-8")
-        offset += topic_name_length
-
-        # Skip remaining binary fields
-        partition_limit = struct.unpack(">i", request[offset:offset + 4])[0]
-        offset += 4
-        cursor = request[offset]  # Single byte
-
-        return topic_name, partition_limit, cursor
-    except UnicodeDecodeError as e:
-        raise ValueError(f"UnicodeDecodeError at position {e.start}: {e.reason}")
-    except Exception as e:
-        raise ValueError(f"Error parsing DescribeTopic request: {e}")
-
-
-def create_response(request):
-    print(f"Request (Hex): {request.hex()}")
-    api_key = struct.unpack(">h", request[:2])[0]  # API key
-    correlation_id = struct.unpack(">i", request[4:8])[0]  # Correlation ID
-
-    if api_key == 75:  # DescribeTopicPartitions
+import typing
+import uuid
+from . import varint
+T = typing.TypeVar("T")
+K = typing.TypeVar("K")
+V = typing.TypeVar("V")
+class ByteReader:
+    def __init__(self, data: bytes):
+        self._data = io.BytesIO(data)
+    def read(self, n: int):
+        return self._data.read(n)
+    def read_signed_char(self):
+        (x,) = struct.unpack("!b", self.read(1))
+        return x
+    def read_signed_short(self):
+        (x,) = struct.unpack("!h", self.read(2))
+        return x
+    def read_signed_int(self):
+        (x,) = struct.unpack("!i", self.read(4))
+        return x
+    def read_unsigned_int(self):
+        (x,) = struct.unpack("!I", self.read(4))
+        return x
+    def read_signed_long(self):
+        (x,) = struct.unpack("!q", self.read(8))
+        return x
+    def read_signed_varlong(self):
+        return varint.read_signed_long(self._data)
+    def read_signed_varint(self):
+        return varint.read_signed_int(self._data)
+    def read_unsigned_varint(self):
+        return varint.read_unsigned_int(self._data)
+    def read_uuid(self):
+        return uuid.UUID(bytes=self.read(16))
+    def read_string(self):
+        length = self.read_signed_short()
+        if length == -1:
+            return None
+        return self.read(length).decode("utf-8")
+    def read_compact_string(self):
+        length = self.read_unsigned_varint()
+        if length == 0:
+            return None
+        return self.read(length - 1).decode("utf-8")
+    def skip_empty_tagged_field_array(self):
+        self.read_unsigned_varint()
+    def read_array(
+        self, deserializer: typing.Callable[["ByteWriter"], T]
+    ) -> typing.Optional[typing.List[T]]:
+        length = self.read_signed_int()
+        if length == -1:
+            return None
+        return [deserializer(self) for _ in range(length)]
+    def read_compact_array(
+        self, deserializer: typing.Callable[["ByteWriter"], T]
+    ) -> typing.Optional[typing.List[T]]:
+        length = self.read_unsigned_varint()
+        if length == 0:
+            return None
+        return [deserializer(self) for _ in range(length - 1)]
+    def read_bytes(self):
+        length = self.read_signed_int()
+        if length == -1:
+            return None
+        return self.read(length)
+    def read_compact_bytes(self):
+        length = self.read_unsigned_varint()
+        if length == 1:
+            return None
+        return self.read(length - 1)
+    def read_compact_dict(
+        self,
+        key_deserializer: typing.Callable[["ByteWriter"], K],
+        value_deserializer: typing.Callable[["ByteWriter"], V],
+    ) -> typing.Optional[typing.Dict[K, V]]:
+        length = self.read_signed_varint()
+        if length == 0:
+            return None
+        return {
+            key_deserializer(self): value_deserializer(self) for _ in range(length - 1)
+        }
+    @contextlib.contextmanager
+    def mark(self):
+        offset = self._data.tell()
         try:
-            topic_name, partition_limit, cursor = parse_describetopic_request(request)
-
-            # Create response
-            throttle_time_ms = 0
-            error_code = 0  # No error
-            partitions_array = 1  # Single partition
-            partition_index = 0
-            partition_error_code = 0  # No error
-            leader_id = 1
-            replicas = [1]
-            isr = [1]
-
-            body = struct.pack(">i", throttle_time_ms)
-            body += struct.pack(">h", error_code)
-            body += struct.pack(">h", len(topic_name))
-            body += topic_name.encode("utf-8")
-            body += struct.pack(">h", partitions_array)
-            body += struct.pack(">h", partition_index)
-            body += struct.pack(">h", partition_error_code)
-            body += struct.pack(">i", leader_id)
-            body += struct.pack(">h", len(replicas))
-            body += struct.pack(">i", replicas[0])
-            body += struct.pack(">h", len(isr))
-            body += struct.pack(">i", isr[0])
-
-            response_message_size = len(body) + 4
-            header = struct.pack(">i", response_message_size)
-            header += struct.pack(">i", correlation_id)
-            response = header + body
-            print(f"Response (Hex): {response.hex()}")
-            return response
-        except ValueError as e:
-            print(f"Error parsing DescribeTopic request: {e}")
-            return b""
-    else:
-        print("Unsupported API key")
-        return b""
-
-
-    raise ValueError("Unsupported API key")
-
-
-async def handle_client(reader, writer):
-    try:
-        while True:
-            message_size_data = await reader.readexactly(4)
-            if not message_size_data:
-                break
-            message_size = struct.unpack(">i", message_size_data)[0]
-            request = await reader.readexactly(message_size)
-            response = create_response(request)
-            writer.write(response)
-            await writer.drain()
-    except asyncio.IncompleteReadError:
-        print("Connection closed unexpectedly")
-    except Exception as e:
-        print(f"Error: {e}")
-    finally:
-        writer.close()
-        await writer.wait_closed()
-
-
-async def main():
-    server = await asyncio.start_server(handle_client, "localhost", 9092)
-    async with server:
-        await server.serve_forever()
-
-
-if __name__ == "__main__":
-    asyncio.run(main())
+            yield
+        finally:
+            self._data.seek(offset)
+    @property
+    def eof(self):
+        with self.mark():
+            return len(self.read(1)) == 0
+class ByteWriter:
+    def __init__(self):
+        self._data = io.BytesIO()
+    def write(self, bytes: bytes):
+        self._data.write(bytes)
+    def write_boolean(self, value: bool):
+        self.write_byte(int(value))
+    def write_byte(self, value: int):
+        self.write(bytes([value]))
+    def write_signed_short(self, value: int):
+        self.write(struct.pack("!h", value))
+    def write_signed_int(self, value: int):
+        self.write(struct.pack("!i", value))
+    def write_signed_long(self, value: int):
+        self.write(struct.pack("!q", value))
+    def write_unsigned_varint(self, value: int):
+        
+        varint.write_unsigned_int(self._data, value)
+    def write_uuid(self, value: uuid.UUID):
+        self.write(value.bytes)
+    def write_string(self, value: typing.Optional[str]):
+        if value is None:
+            return self.write_signed_short(-1)
+        bytes = value.encode("utf-8")
+        self.write_signed_short(len(bytes))
+        self.write(bytes)
+    def write_compact_string(self, value: typing.Optional[str]):
+        if value is None:
+            return self.write_unsigned_varint(0)
+        bytes = value.encode("utf-8")
+        self.write_unsigned_varint(len(bytes) + 1)
+        self.write(bytes)
+    def write_compact_array(
+        self,
+        items: typing.List[T],
+        serializer: typing.Callable[[T, "ByteWriter"], None],
+    ):
+        if items is None:
+            self.write_unsigned_varint(0)
+            return
+        self.write_unsigned_varint(len(items) + 1)
+        for item in items:
+            serializer(item, self)
+    def write_compact_records(
+        self,
+        records: bytes,
+    ):
+        if records is None:
+            self.write_unsigned_varint(0)
+            return
+        self.write_unsigned_varint(len(records) + 1)
+        self.write(records)
+    def skip_empty_tagged_field_array(self):
+        self.write_unsigned_varint(0)
+    @property
+    def bytes(self):
+        return self._data.getvalue()
